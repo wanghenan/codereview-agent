@@ -1,0 +1,68 @@
+# CodeReview Agent Configuration
+# ==============================
+# Copy this file to .codereview-agent.yaml in your project
+
+# LLM Configuration (required)
+llm:
+  # Supported: openai, anthropic, zhipu, minimax, qwen, deepseek
+  provider: openai
+  
+  # API Key - supports environment variables
+  # Usage: ${ENV_VAR_NAME} or ${ENV_VAR_NAME:-default}
+  apiKey: ${LLM_API_KEY}
+  
+  # Optional: specify model (defaults to provider's best)
+  # model: gpt-4o
+  # model: gpt-5.2
+  # model: claude-sonnet-4.6
+  # model: glm-  # model:4-flash
+ qwen-plus
+  # model: deepseek-chat
+  
+  # Optional: custom API endpoint
+  # baseUrl: https://api.example.com/v1
+
+# Critical paths (optional)
+# Files in these directories are considered high risk
+criticalPaths:
+  - src/auth
+  - src/payment
+  - src/admin
+  - models/
+
+# Exclude patterns (optional)
+# Files matching these patterns will be skipped
+excludePatterns:
+  - "*.test.ts"
+  - "*.test.js"
+  - "*.spec.ts"
+  - "*.spec.js"
+  - "*.mock.ts"
+  - "vendor/**"
+  - "node_modules/**"
+  - "dist/**"
+  - "build/**"
+  - "__pycache__/**"
+  - "*.pyc"
+
+# Cache configuration (optional)
+cache:
+  # Cache validity in days (1-30)
+  ttl: 7
+  
+  # Force cache refresh
+  forceRefresh: false
+
+# Output configuration (optional)
+output:
+  # Post comment on PR
+  prComment: true
+  
+  # Where to save reports
+  reportPath: .codereview-agent/output
+  
+  # Report format: markdown, json, or both
+  reportFormat: markdown
+
+# Custom prompt (optional)
+# customPrompt: ./custom-prompt.template

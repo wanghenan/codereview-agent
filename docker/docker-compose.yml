@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  codereview:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ..:/app
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY}
+    stdin_open: true
+    tty: true
+
+  # Example: GitHub App server
+  # app:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile
+  #   command: python -m codereview.app
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GITHUB_APP_ID=${GITHUB_APP_ID}
+  #     - GITHUB_PRIVATE_KEY=${GITHUB_PRIVATE_KEY}
+  #     - LLM_API_KEY=${LLM_API_KEY}
+  #   volumes:
+  #     - ..:/app
