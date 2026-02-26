@@ -103,7 +103,26 @@ class ConfigCache(BaseModel):
     force_refresh: bool = False
 
 
+class OutputConfig(BaseModel):
+    """Output configuration."""
+
+    pr_comment: bool = True
+    report_path: str = ".codereview-agent/output"
+    report_format: str = "markdown"  # markdown, json, both
+
+
 class Config(BaseModel):
+    """CodeReview Agent configuration."""
+
+    llm: ConfigLLM
+    critical_paths: list[str] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
+    cache: ConfigCache = Field(default_factory=ConfigCache)
+    custom_prompt_path: Optional[str] = None
+    output: OutputConfig = Field(default_factory=OutputConfig)
+
+
+class DiffEntry(BaseModel):
     """CodeReview Agent configuration."""
 
     llm: ConfigLLM
