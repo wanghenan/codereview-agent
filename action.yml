@@ -28,6 +28,8 @@ runs:
       uses: astral-sh/setup-uv@v4
 
     - name: Install codereview-agent
+      run: uv pip install --system git+https://github.com/wanghenan/codereview-agent.git@v1#subdirectory=python
+      shell: bash
       run: uv pip install --system git+https://github.com/wanghenan/codereview-agent.git@v1
       shell: bash
 
