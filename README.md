@@ -35,6 +35,19 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
+      - uses: wanghenan/codereview-agent@v1
+        with:
+          config: .codereview-agent.yaml
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+```
+name: CodeReview Agent
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v4
       - uses: wanghenan/codereview-agent@v1
         with:
@@ -59,7 +72,14 @@ llm:
 
 ---
 
-### 方式二：Docker
+### 方式二：Docker (即将推出)
+
+```bash
+# 即将支持
+docker run -v $(pwd):/app \
+  -e LLM_API_KEY=your-key \
+  wanghenan/codereview-agent --pr 123
+```
 
 ```bash
 docker run -v $(pwd):/app \

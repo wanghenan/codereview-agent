@@ -1,0 +1,97 @@
+# CodeReview Agent GitHub Action
+name: 'CodeReview Agent'
+description: 'AI-powered code review agent with LangChain + LangGraph'
+author: 'wanghenan'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  config:
+    description: 'Path to config file'
+    required: false
+    default: '.codereview-agent.yaml'
+  token:
+    description: 'GitHub token for posting comments'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Install codereview-agent
+      run: uv pip install --system git+https://github.com/wanghenan/codereview-agent.git@v1
+      shell: bash
+
+    - name: Get PR files
+      id: pr_files
+      run: |
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        
+        if [ -z "$PR_NUMBER" ]; then
+          echo "No PR number found"
+          exit 0
+        fi
+        
+        FILES_JSON=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER/files" | \
+          jq -c '[.[] | {filename: .filename, status: .status, additions: .additions, deletions: .deletions, patch: .patch}]')
+        
+        echo "files_json=$FILES_JSON" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Run CodeReview Agent
+      id: review
+      env:
+        LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        FILES_JSON: ${{ steps.pr_files.outputs.files_json }}
+      run: |
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        
+        if [ -z "$PR_NUMBER" ]; then
+          echo "No PR number to review"
+          exit 0
+        fi
+        
+        python -m codereview.cli \
+          --pr $PR_NUMBER \
+          --diff "{\"files\": $FILES_JSON}" \
+          --config ${{ inputs.config }} \
+          --json > review-result.json || true
+        
+        if [ -f review-result.json ]; then
+          cat review-result.json
+        fi
+      shell: bash
+
+    - name: Post PR comment
+      if: success() && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          let comment = '';
+          try {
+            const content = fs.readFileSync('review-result.json', 'utf8');
+            const result = JSON.parse(content);
+            comment = result.outputs?.pr_comment || '';
+          } catch (e) {
+            console.log('No review result');
+          }
+          
+          if (comment) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: comment
+            });
+          }
