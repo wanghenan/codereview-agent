@@ -30,8 +30,6 @@ runs:
     - name: Install codereview-agent
       run: uv pip install --system git+https://github.com/wanghenan/codereview-agent.git@v1#subdirectory=python
       shell: bash
-      run: uv pip install --system git+https://github.com/wanghenan/codereview-agent.git@v1
-      shell: bash
 
     - name: Get PR files
       id: pr_files
