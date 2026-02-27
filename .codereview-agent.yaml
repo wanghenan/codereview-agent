@@ -1,68 +1,30 @@
 # CodeReview Agent Configuration
 # ==============================
-# Copy this file to .codereview-agent.yaml in your project
 
-# LLM Configuration (required)
+# LLM Configuration
 llm:
-  # Supported: openai, anthropic, zhipu, minimax, qwen, deepseek
-  provider: openai
-  
-  # API Key - supports environment variables
-  # Usage: ${ENV_VAR_NAME} or ${ENV_VAR_NAME:-default}
-  apiKey: ${LLM_API_KEY}
-  
-  # Optional: specify model (defaults to provider's best)
-  # model: gpt-4o
-  # model: gpt-5.2
-  # model: claude-sonnet-4.6
-  # model: glm-  # model:4-flash
- qwen-plus
-  # model: deepseek-chat
-  
-  # Optional: custom API endpoint
-  # baseUrl: https://api.example.com/v1
+  provider: minimax
+  apiKey: ${{ secrets.LLM_API_KEY }}
+  model: abab6.5s-chat
 
-# Critical paths (optional)
-# Files in these directories are considered high risk
+# Critical paths - high risk areas
 criticalPaths:
-  - src/auth
-  - src/payment
-  - src/admin
-  - models/
+  - python/src/codereview
 
-# Exclude patterns (optional)
-# Files matching these patterns will be skipped
+# Exclude patterns
 excludePatterns:
-  - "*.test.ts"
-  - "*.test.js"
-  - "*.spec.ts"
-  - "*.spec.js"
-  - "*.mock.ts"
-  - "vendor/**"
+  - "*.test.py"
+  - "**/__pycache__/**"
+  - ".venv/**"
   - "node_modules/**"
-  - "dist/**"
-  - "build/**"
-  - "__pycache__/**"
-  - "*.pyc"
 
-# Cache configuration (optional)
+# Cache configuration
 cache:
-  # Cache validity in days (1-30)
   ttl: 7
-  
-  # Force cache refresh
   forceRefresh: false
 
-# Output configuration (optional)
+# Output configuration
 output:
-  # Post comment on PR
   prComment: true
-  
-  # Where to save reports
   reportPath: .codereview-agent/output
-  
-  # Report format: markdown, json, or both
   reportFormat: markdown
-
-# Custom prompt (optional)
-# customPrompt: ./custom-prompt.template
