@@ -123,25 +123,6 @@ class Config(BaseModel):
 
 
 class DiffEntry(BaseModel):
-    """CodeReview Agent configuration."""
-
-    llm: ConfigLLM
-    critical_paths: list[str] = Field(default_factory=list)
-    exclude_patterns: list[str] = Field(default_factory=list)
-    cache: ConfigCache = Field(default_factory=ConfigCache)
-    custom_prompt_path: Optional[str] = None
-    output: OutputConfig = Field(default_factory=OutputConfig)
-
-
-class OutputConfig(BaseModel):
-    """Output configuration."""
-
-    pr_comment: bool = True
-    report_path: str = ".codereview-agent/output"
-    report_format: str = "markdown"  # markdown, json, both
-
-
-class DiffEntry(BaseModel):
     """A file diff entry."""
 
     filename: str
