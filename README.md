@@ -1,9 +1,17 @@
-# CodeReview Agent
+# CodeReview Agent 🤖
 
-🤖 AI 驱动的 CodeReview 智能体，帮助程序员自动识别哪些代码可提交、哪些需要人工审核。
+[🇨🇳 中文](./README.md) | [🇺🇸 English](./README_EN.md)
+
+AI 驱动的 CodeReview 智能体，帮助程序员自动识别哪些代码可提交、哪些需要人工审核。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/wanghenan/codereview-agent)](https://github.com/wanghenan/codereview-agent/stargazers)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://docker.com)
+[![Version](https://img.shields.io/badge/Version-v1-green.svg)](https://github.com/wanghenan/codereview-agent/releases)
+[![LangChain](https://img.shields.io/badge/LangChain-Latest-orange.svg)](https://langchain.dev)
+
+---
 
 ## ✨ 特性
 
@@ -12,10 +20,6 @@
 - 🤖 **基于 LangChain + LangGraph** - 模块化、易扩展
 - 🌐 **6 大 LLM Provider** - OpenAI、Anthropic、智谱AI、MiniMax、阿里云、DeepSeek
 - 🚀 **三种使用方式** - GitHub Action / Docker / CLI
-
-## 📖 文档
-
-**[📚 完整使用指南 →](./docs/USER_GUIDE.md)**
 
 ---
 
@@ -28,19 +32,6 @@
 **1. `.github/workflows/codereview.yml`**
 
 ```yaml
-name: CodeReview Agent
-on: [pull_request]
-
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: wanghenan/codereview-agent@v1
-        with:
-          config: .codereview-agent.yaml
-        env:
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-```
 name: CodeReview Agent
 on: [pull_request]
 
@@ -72,14 +63,7 @@ llm:
 
 ---
 
-### 方式二：Docker (即将推出)
-
-```bash
-# 即将支持
-docker run -v $(pwd):/app \
-  -e LLM_API_KEY=your-key \
-  wanghenan/codereview-agent --pr 123
-```
+### 方式二：Docker
 
 ```bash
 docker run -v $(pwd):/app \
@@ -135,3 +119,11 @@ python -m codereview.cli --diff diff.json
 ## 📄 License
 
 MIT License - 欢迎贡献！
+
+---
+
+<div align="center">
+
+**如果这个项目对你有帮助，欢迎 ⭐ Star！**
+
+</div>

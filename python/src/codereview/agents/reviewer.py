@@ -6,13 +6,15 @@ with confidence scoring.
 
 from __future__ import annotations
 
+import asyncio
 import json
-from pathlib import Path
-from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, END
+
+# Default max concurrent reviews
+DEFAULT_MAX_CONCURRENT = 5
 
 from codereview.models import (
     Config,
@@ -96,7 +98,7 @@ class ReviewAgent:
         self.project_context = project_context
 
     async def review_files(self, diff_entries: list[DiffEntry]) -> list[FileReview]:
-        """Review multiple files.
+        """Review multiple files in parallel.
 
         Args:
             diff_entries: List of file diffs to review
@@ -104,17 +106,34 @@ class ReviewAgent:
         Returns:
             List of file review results
         """
-        results = []
+        # Filter out excluded patterns first
+        entries_to_review = [
+            entry for entry in diff_entries
+            if not self._should_exclude(entry.filename)
+        ]
 
-        for entry in diff_entries:
-            # Skip excluded patterns
-            if self._should_exclude(entry.filename):
-                continue
+        if not entries_to_review:
+            return []
 
-            review = await self._review_file(entry)
-            results.append(review)
+        # Use semaphore to limit concurrent reviews
+        semaphore = asyncio.Semaphore(DEFAULT_MAX_CONCURRENT)
 
-        return results
+        async def review_with_limit(entry: DiffEntry) -> FileReview:
+            async with semaphore:
+                return await self._review_file(entry)
+
+        # Process all files in parallel with concurrency limit
+        tasks = [review_with_limit(entry) for entry in entries_to_review]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Filter out exceptions and keep only valid results
+        valid_results = [
+            result for result in results
+            if isinstance(result, FileReview)
+        ]
+
+        return valid_results
+
 
     def _should_exclude(self, filename: str) -> bool:
         """Check if file should be excluded from review."""
