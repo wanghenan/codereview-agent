@@ -35,6 +35,9 @@ def __getattr__(name):
     elif name == "create_auto_merger":
         from codereview.core.auto_merger import create_auto_merger
         return create_auto_merger
+    elif name == "HistoryTracker":
+        from codereview.core.history_tracker import HistoryTracker
+        return HistoryTracker
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -44,10 +47,13 @@ __all__ = [
     "CodeFixer",
     "ConfigLoader",
     "create_auto_merger",
+    "create_team_insights",
     "FixOrchestrator",
     "FixResult",
     "FixSuggestion",
     "FixType",
+    "HistoryTracker",
     "LLMFactory",
+    "TeamInsights",
     "VersionDetector",
 ]
