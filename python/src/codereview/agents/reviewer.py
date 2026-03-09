@@ -6,9 +6,11 @@ with confidence scoring.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -24,6 +26,16 @@ from codereview.models import (
     ReviewConclusion,
     ReviewResult,
 )
+
+logger = logging.getLogger(__name__)
+
+# Try to import rule engine
+try:
+    from codereview.rules import RuleEngine, create_rule_engine
+    RULES_AVAILABLE = True
+except ImportError:
+    RULES_AVAILABLE = False
+    logger.warning("Rule engine not available, skipping static analysis")
 
 
 # State for the review agent
@@ -49,6 +61,9 @@ and identify potential issues.
 
 ## Exclude Patterns
 {exclude_patterns}
+
+## Static Analysis Results
+{static_results}
 
 ## Code Diff
 File: {filename}
@@ -83,20 +98,37 @@ Be strict but fair. Focus on real issues, not style preferences."""
 class ReviewAgent:
     """LangGraph-based code review agent."""
 
-    def __init__(self, config: Config, llm: Any, project_context: ProjectContext):
+    def __init__(
+        self,
+        config: Config,
+        llm: Any,
+        project_context: ProjectContext,
+        rule_engine: Optional[Any] = None,
+        file_cache: Optional[Any] = None,
+        max_concurrency: int = 5,
+        timeout_seconds: float = 30.0,
+    ):
         """Initialize review agent.
 
         Args:
             config: Agent configuration
             llm: LangChain LLM instance
             project_context: Pre-analyzed project context
+            rule_engine: Optional rule engine for static analysis
+            file_cache: Optional file-level review cache
+            max_concurrency: Maximum concurrent file reviews
+            timeout_seconds: Timeout for each file review
         """
         self.config = config
         self.llm = llm
         self.project_context = project_context
+        self.rule_engine = rule_engine
+        self.file_cache = file_cache
+        self.max_concurrency = max_concurrency
+        self.timeout_seconds = timeout_seconds
 
     async def review_files(self, diff_entries: list[DiffEntry]) -> list[FileReview]:
-        """Review multiple files.
+        """Review multiple files with parallel processing.
 
         Args:
             diff_entries: List of file diffs to review
@@ -105,14 +137,52 @@ class ReviewAgent:
             List of file review results
         """
         results = []
+        semaphore = asyncio.Semaphore(self.max_concurrency)
 
+        async def review_with_semaphore(entry: DiffEntry) -> Optional[FileReview]:
+            async with semaphore:
+                return await self._review_file(entry)
+
+        # Check for cached results first
+        tasks = []
+        cached_results = {}
+        
         for entry in diff_entries:
             # Skip excluded patterns
             if self._should_exclude(entry.filename):
                 continue
 
-            review = await self._review_file(entry)
-            results.append(review)
+            # Check cache if available
+            if self.file_cache and entry.patch:
+                cached = self.file_cache.get(entry.filename, entry.patch)
+                if cached:
+                    logger.info(f"Using cached review for {entry.filename}")
+                    cached_results[entry.filename] = FileReview(**cached)
+                    continue
+
+            tasks.append(review_with_semaphore(entry))
+
+        # Run remaining reviews in parallel
+        if tasks:
+            reviews = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for review in reviews:
+                if isinstance(review, Exception):
+                    logger.error(f"Review failed: {review}")
+                    continue
+                if review:
+                    results.append(review)
+                    
+                    # Cache the result
+                    if self.file_cache and review.file_path and entry.patch:
+                        self.file_cache.save(
+                            review.file_path, 
+                            entry.patch, 
+                            review.model_dump()
+                        )
+
+        # Add cached results
+        results.extend(cached_results.values())
 
         return results
 
@@ -126,7 +196,7 @@ class ReviewAgent:
         return False
 
     async def _review_file(self, entry: DiffEntry) -> FileReview:
-        """Review a single file.
+        """Review a single file with timeout handling.
 
         Args:
             entry: File diff entry
@@ -134,21 +204,41 @@ class ReviewAgent:
         Returns:
             File review result
         """
+        # Run static analysis first (fast)
+        static_issues = []
+        if self.rule_engine and entry.patch:
+            static_issues = self.rule_engine.detect_in_diff(
+                entry.patch, 
+                language=self._detect_language(entry.filename)
+            )
+
+        # Build static results summary for prompt
+        static_results = ""
+        if static_issues:
+            static_results = "Static analysis found the following issues:\n"
+            for issue in static_issues:
+                static_results += f"- [{issue['severity'].upper()}] {issue['description']} (Line {issue['line_number']})\n"
+
         prompt = self._build_prompt(entry)
         chain = prompt | self.llm | JsonOutputParser()
 
         try:
-            result = await chain.ainvoke(
-                {
-                    "project_context": json.dumps(self.project_context.model_dump(), indent=2),
-                    "critical_paths": "\n".join(self.project_context.critical_paths),
-                    "exclude_patterns": "\n".join(self.config.exclude_patterns),
-                    "filename": entry.filename,
-                    "status": entry.status,
-                    "additions": entry.additions,
-                    "deletions": entry.deletions,
-                    "patch": entry.patch or "No diff available",
-                }
+            # Run with timeout
+            result = await asyncio.wait_for(
+                chain.ainvoke(
+                    {
+                        "project_context": json.dumps(self.project_context.model_dump(), indent=2),
+                        "critical_paths": "\n".join(self.project_context.critical_paths),
+                        "exclude_patterns": "\n".join(self.config.exclude_patterns),
+                        "static_results": static_results,
+                        "filename": entry.filename,
+                        "status": entry.status,
+                        "additions": entry.additions,
+                        "deletions": entry.deletions,
+                        "patch": entry.patch or "No diff available",
+                    }
+                ),
+                timeout=self.timeout_seconds
             )
 
             # Parse result into FileReview
@@ -162,6 +252,18 @@ class ReviewAgent:
                 )
                 for issue in result.get("issues", [])
             ]
+
+            # Add static analysis issues
+            for static_issue in static_issues:
+                issues.append(
+                    FileIssue(
+                        file_path=entry.filename,
+                        line_number=static_issue.get("line_number"),
+                        risk_level=RiskLevel(static_issue.get("severity", "low")),
+                        description=f"[Rule: {static_issue.get('rule_name')}] {static_issue.get('description', '')}",
+                        suggestion=static_issue.get("suggestion"),
+                    )
+                )
 
             # Determine overall risk level
             risk_level = RiskLevel(result.get("risk_level", "low"))
@@ -178,7 +280,22 @@ class ReviewAgent:
                 issues=issues,
             )
 
+        except asyncio.TimeoutError:
+            logger.warning(f"Review timed out for {entry.filename}")
+            # Return a basic review on timeout
+            return FileReview(
+                file_path=entry.filename,
+                risk_level=RiskLevel.MEDIUM,
+                changes=f"+{entry.additions}, -{entry.deletions}",
+                issues=[FileIssue(
+                    file_path=entry.filename,
+                    risk_level=RiskLevel.MEDIUM,
+                    description="Review timed out, manual review recommended",
+                    suggestion="Consider reviewing this file manually or breaking it into smaller changes"
+                )],
+            )
         except Exception as e:
+            logger.error(f"Review failed for {entry.filename}: {e}")
             # Return a basic review on error
             return FileReview(
                 file_path=entry.filename,
@@ -199,6 +316,36 @@ class ReviewAgent:
             if filename.startswith(path):
                 return True
         return False
+
+    def _detect_language(self, filename: str) -> Optional[str]:
+        """Detect programming language from file extension.
+
+        Args:
+            filename: File name
+
+        Returns:
+            Language identifier or None
+        """
+        ext = Path(filename).suffix.lower()
+        language_map = {
+            ".py": "python",
+            ".js": "javascript",
+            ".ts": "javascript",
+            ".jsx": "javascript",
+            ".tsx": "javascript",
+            ".java": "java",
+            ".go": "go",
+            ".rs": "rust",
+            ".rb": "ruby",
+            ".php": "php",
+            ".cs": "csharp",
+            ".cpp": "cpp",
+            ".c": "c",
+            ".swift": "swift",
+            ".kt": "kotlin",
+            ".scala": "scala",
+        }
+        return language_map.get(ext)
 
     def create_graph(self) -> StateGraph:
         """Create LangGraph for review workflow.
@@ -237,15 +384,25 @@ class ReviewAgent:
 class ReviewOrchestrator:
     """Orchestrate the complete review process."""
 
-    def __init__(self, config: Config, llm: Any):
+    def __init__(
+        self,
+        config: Config,
+        llm: Any,
+        rule_engine: Optional[Any] = None,
+        file_cache: Optional[Any] = None,
+    ):
         """Initialize orchestrator.
 
         Args:
             config: Agent configuration
             llm: LangChain LLM instance
+            rule_engine: Optional rule engine for static analysis
+            file_cache: Optional file-level review cache
         """
         self.config = config
         self.llm = llm
+        self.rule_engine = rule_engine
+        self.file_cache = file_cache
 
     async def run_review(
         self, diff_entries: list[DiffEntry], project_context: ProjectContext | None = None
@@ -270,8 +427,14 @@ class ReviewOrchestrator:
                 analyzed_at=datetime.now().isoformat(),
             )
 
-        # Create review agent
-        agent = ReviewAgent(self.config, self.llm, project_context)
+        # Create review agent with rule engine and file cache
+        agent = ReviewAgent(
+            self.config,
+            self.llm,
+            project_context,
+            rule_engine=self.rule_engine,
+            file_cache=self.file_cache,
+        )
 
         # Review files
         file_reviews = await agent.review_files(diff_entries)
