@@ -1,63 +1,51 @@
 # CodeReview Agent
 
-🤖 AI 驱动的 CodeReview 智能体，帮助程序员自动识别哪些代码可提交、哪些需要人工审核。
+🤖 AI 驱动的 CodeReview 智能体，自动识别代码风险，让每一次提交都有底气的 Code Review 工具。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/wanghenan/codereview-agent)](https://github.com/wanghenan/codereview-agent/stargazers)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Discord](https://img.shields.io/discord/123456789?label=Discord)](https://discord.gg/codereview-agent)
-[![Twitter](https://img.shields.io/twitter/follow/codereview_agent?style=social)](https://twitter.com/codereview_agent)
 
 ---
 
-## ✨ 特性
+## 一句话介绍
 
-- 🔍 **智能风险识别** - 自动检测安全漏洞、SQL注入、硬编码密钥等问题
-- 📊 **置信度评分** - 基于问题严重程度计算 0-100% 置信度
-- 🤖 **基于 LangChain + LangGraph** - 模块化、易扩展
-- 🌐 **6 大 LLM Provider** - OpenAI、Anthropic、智谱AI、MiniMax、阿里云、DeepSeek
-- 🚀 **三种使用方式** - GitHub Action / Docker / CLI
-- 🔒 **代码隐私保护** - 仅上传 diff，不上传源码
-
-## 📖 文档
-
-**[📚 完整使用指南 →](./docs/USER_GUIDE.md)**
+**CodeReview Agent** 利用 AI 技术自动分析代码变更，智能识别安全风险和质量缺陷，提供 0-100% 置信度评分，帮助团队快速决定哪些代码可以直接合并、哪些需要人工重点审核。
 
 ---
 
-## 🤔 为什么选择 CodeReview Agent？
+## ✨ 核心亮点
 
-### 横向对比
-
-| 特性 | CodeReview Agent | GitHub Copilot | DeepCode | SonarQube |
-|------|------------------|----------------|----------|-----------|
-| **AI 智能分析** | ✅ 基于 LLM | ✅ 生成式 | ✅ ML | ❌ 规则引擎 |
-| **置信度评分** | ✅ 0-100% | ❌ | ❌ | ⚠️ 质量门禁 |
-| **自动风险分级** | 🔴高/🟡中/🟢低 | ❌ | ✅ | ✅ |
-| **多 LLM 支持** | ✅ 6家 | ❌ 仅 OpenAI | ❌ | N/A |
-| **国产模型支持** | ✅ 智谱/MiniMax/阿里 | ❌ | ❌ | N/A |
-| **GitHub Action** | ✅ 开箱即用 | ✅ | ❌ | ✅ |
-| **本地 CLI** | ✅ | ❌ | ❌ | ❌ |
-| **免费使用** | ✅ (API 成本自费) | 💰 订阅制 | 💰 企业版 | ✅ 社区版 |
-
-### 核心优势
-
-| 优势 | 说明 |
+| 亮点 | 说明 |
 |------|------|
-| 🎯 **精准定位** | 不仅发现问题，还告诉你严重程度和修复建议 |
-| 📈 **效率提升** | 10 秒完成全量 review，人工仅需复核高风险 |
-| 🧠 **智能判断** | 基于置信度评分，0-50% 建议人工审核，50-100% 可直接合并 |
-| 🌏 **本土化** | 完美支持国产大模型，国内访问快、价格低 |
-| 🔌 **零门槛接入** | 一行 YAML 配置，PR 自动触发 review |
+| 🎯 **置信度评分** | 0-100% 可视化评分，50% 以下建议人工审核，50% 以上可放心合并 |
+| 🌐 **6 大 LLM 支持** | OpenAI、Anthropic、智谱AI、MiniMax、阿里云、DeepSeek |
+| 🔒 **自托管部署** | 支持私有化部署，数据不出网，适合安全敏感团队 |
+| 🛠️ **智能修复** | 不仅发现问题，还提供修复建议，可一键应用 |
+| 📊 **代码复杂度评分** | 多维度量化代码复杂度，识别潜在技术债务 |
+| 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
+| 🔄 **历史回溯** | 智能缓存机制，支持历史对比和趋势分析 |
+| 👥 **团队洞察** | 统计团队 review 数据，识别高频问题模式 |
 
 ---
 
-## 🚀 快速开始
+## 🚀 3 分钟快速开始
 
-### 方式一：GitHub Action (推荐)
+### 第一步：创建配置文件
 
-在 **你的项目** 中添加：
+在项目根目录创建 `.codereview-agent.yaml`：
 
-**1. `.github/workflows/codereview.yml`**
+```yaml
+llm:
+  provider: minimax  # 支持: openai, anthropic, zhipu, minimax, qwen, deepseek
+  apiKey: ${LLM_API_KEY}
+  model: abab6.5s-chat
+```
+
+### 第二步：添加 GitHub Action
+
+创建 `.github/workflows/codereview.yml`：
 
 ```yaml
 name: CodeReview Agent
@@ -75,23 +63,44 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 ```
 
-**2. `.codereview-agent.yaml`**
+### 第三步：配置 Secrets
 
-```yaml
-llm:
-  provider: minimax
-  apiKey: ${{ secrets.LLM_API_KEY }}
-  model: abab6.5s-chat
-```
-
-**3. 添加 GitHub Secrets**
-- Settings → Secrets → `LLM_API_KEY`
+在 GitHub 仓库 Settings → Secrets → Actions 中添加 `LLM_API_KEY`
 
 创建 PR → 自动 review！🎉
 
 ---
 
+## 📖 三种使用方式
+
+### 方式一：GitHub Action（推荐）
+
+自动化集成，PR 自动触发 review，结果直接评论到 PR 上。
+
+```yaml
+# .github/workflows/codereview.yml
+name: CodeReview Agent
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wanghenan/codereview-agent@v1
+        with:
+          config: .codereview-agent.yaml
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+```
+
+**[→ 查看完整 GitHub Action 配置](./docs/USER_GUIDE.md)**
+
+---
+
 ### 方式二：Docker
+
+适合本地测试或 CI/CD 流水线：
 
 ```bash
 docker run -v $(pwd):/app \
@@ -99,18 +108,90 @@ docker run -v $(pwd):/app \
   wanghenan/codereview-agent --pr 123
 ```
 
+**[→ 查看 Docker 部署指南](./docs/USER_GUIDE.md#方式二docker)**
+
 ---
 
 ### 方式三：本地 CLI
 
+直接在本项目运行：
+
 ```bash
+# 1. 克隆项目
 git clone https://github.com/wanghenan/codereview-agent.git
 cd codereview-agent/python
+
+# 2. 安装依赖
+uv venv && source .venv/bin/activate
 pip install -e .
 
-# 在你的项目运行
-python -m codereview.cli --diff diff.json
+# 3. 配置并运行
+cp /path/to/.codereview-agent.yaml ./
+python -m codereview.cli --diff '{\"files\": [...]}'
 ```
+
+**[→ 查看 CLI 完整用法](./docs/USER_GUIDE.md#方式三本地-cli)**
+
+---
+
+## 📋 功能列表
+
+### 🔍 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| 智能风险识别 | 自动检测安全漏洞、SQL注入、硬编码密钥、敏感信息泄露等 |
+| 置信度评分 | 基于问题严重程度计算 0-100% 置信度 |
+| 风险分级 | 🔴高 / 🟡中 / 🟢低 三级风险标注 |
+| 修复建议 | 每项问题提供具体修复方案 |
+
+### 🧠 智能功能
+
+| 功能 | 说明 |
+|------|------|
+| 代码复杂度评分 | 从圈复杂度、嵌套深度、函数长度等维度评分 |
+| 智能缓存 | 自动缓存 review 结果，避免重复分析 |
+| 自定义提示词 | 支持自定义分析 prompt，满足团队特定需求 |
+| 多 LLM 路由 | 根据场景自动选择最合适的模型 |
+
+### 🌐 多语言支持
+
+| 语言 | 状态 |
+|------|------|
+| Python | ✅ 完整支持 |
+| JavaScript / TypeScript | ✅ 完整支持 |
+| Go | ✅ 完整支持 |
+| Java | ✅ 完整支持 |
+| Rust | ✅ 完整支持 |
+| PHP | ✅ 完整支持 |
+| C / C++ | ✅ 完整支持 |
+| 更多语言 | 🔄 持续更新 |
+
+### 🛠️ IDE 集成
+
+| 集成方式 | 说明 |
+|----------|------|
+| VS Code 插件 | 实时分析当前文件， inline 显示风险提示 |
+| GitHub Action | PR 自动触发，评论直达 |
+| Webhook | 支持对接内部系统 |
+
+### 📊 分析功能
+
+| 分析类型 | 说明 |
+|----------|------|
+| 安全分析 | 漏洞检测、密钥泄露、依赖风险 |
+| 代码质量 | 坏味道检测、代码规范 |
+| 复杂度分析 |圈复杂度、认知复杂度、函数长度 |
+| 历史趋势 | review 历史对比，技术债务追踪 |
+
+### ⚙️ 自动化
+
+| 自动化 | 说明 |
+|--------|------|
+| PR 自动 review | GitHub Action 自动触发 |
+| 定时扫描 | 支持定时全量代码扫描 |
+| CI/CD 集成 | 无缝集成现有 CI/CD 流水线 |
+| 自定义规则 | 支持团队特定规则配置 |
 
 ---
 
@@ -130,7 +211,7 @@ python -m codereview.cli --diff diff.json
 ### 问题
 
 1. 🔴 HIGH: 硬编码 API Key
-2. 🔴 HIGH: SQL 注入漏洞
+2. 🔴 HIGH: SQL 注入漏洞  
 3. 🔴 HIGH: 发送凭据到外部服务
 ```
 
@@ -152,22 +233,7 @@ python -m codereview.cli --diff diff.json
 
 ---
 
-## ❓ 常见问题 FAQ
-
-### 基础问题
-
-**Q: CodeReview Agent 是免费的吗？**
-> A: 工具本身免费，你只需要支付 LLM API 的调用费用。每次 review 成本约 $0.01-$0.05（取决于模型）。
-
-**Q: 我的代码会泄露吗？**
-> A: 不会。我们只上传 diff（变更内容），不上传完整源代码。API 调用也通过你的账户直接调用，不经过第三方服务器。
-
-**Q: 支持哪些编程语言？**
-> A: 目前支持 Python、JavaScript、TypeScript、Go、Java。更多语言持续更新中。
-
-### 使用问题
-
-**Q: 如何选择 LLM Provider？**
+## 💰 LLM Provider 选择指南
 
 | 场景 | 推荐 | 理由 |
 |------|------|------|
@@ -176,21 +242,20 @@ python -m codereview.cli --diff diff.json
 | 国内访问 | MiniMax / 智谱AI / 阿里云 | 无需翻墙 |
 | 安全敏感 | 自部署 + 开源模型 | 数据不出网 |
 
+---
+
+## ❓ 常见问题
+
+**Q: CodeReview Agent 是免费的吗？**
+> 工具本身免费，仅需支付 LLM API 调用费用，每次约 $0.01-$0.05
+
+**Q: 我的代码会泄露吗？**
+> 不会！仅上传 diff（变更内容），不上传完整源码，API 直连你的账户
+
 **Q: 置信度是怎么计算的？**
-> A: 基于问题严重程度加权计算。Critical = 100%, High = 75%, Medium = 50%, Low = 25%。无问题 = 100%。
+> Critical = 100%, High = 75%, Medium = 50%, Low = 25%，无问题 = 100%
 
-**Q: 可以自定义提示词吗？**
-> A: 可以。参考 `custom-prompt.template` 文件。
-
-### 集成问题
-
-**Q: GitHub Action 触发失败怎么办？**
-> 1. 确认 `.codereview-agent.yaml` 存在且格式正确
-> 2. 确认 secrets 已正确配置
-> 3. 查看 Actions 日志排查
-
-**Q: 如何禁用自动评论？**
-> A: 在配置中设置 `output.prComment: false`
+**[→ 查看更多 FAQ](./docs/USER_GUIDE.md#常见问题)**
 
 ---
 
@@ -198,20 +263,30 @@ python -m codereview.cli --diff diff.json
 
 - **核心**: Python 3.10+ / LangChain / LangGraph
 - **LLM**: OpenAI, Anthropic, 智谱AI, MiniMax, 阿里云, DeepSeek
-- **部署**: GitHub Actions, Docker
+- **部署**: GitHub Actions, Docker, CLI, VS Code
+
+---
+
+## 📚 完整文档
+
+- [📖 用户指南](./docs/USER_GUIDE.md) - 完整的使用说明和配置参考
+- [📊 AI vs 人工对比](./docs/COMPARISON.md) - 效率分析和成本对比
+- [💡 使用场景](./docs/USE_CASES.md) - 真实用户故事
+
+---
+
+## 🤝 贡献指南
+
+欢迎提交 Issue 和 PR！请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ---
 
 ## 📄 License
 
-MIT License - 欢迎贡献！
+MIT License
 
 ---
 
-## 🔗 相关链接
-
-- [📚 完整使用指南](./docs/USER_GUIDE.md)
-- [📊 AI vs 人工对比](./docs/COMPARISON.md)
-- [💡 使用场景故事](./docs/USE_CASES.md)
-- [🎮 更新日志](https://github.com/wanghenan/codereview-agent/releases)
-- [🐛 问题反馈](https://github.com/wanghenan/codereview-agent/issues)
+<p align="center">
+  <sub>Built with ❤️ by the CodeReview Agent team</sub>
+</p>
