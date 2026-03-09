@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# VS Code
+*.vsix
+
+# Logs
+*.log
+
+# Test results
+.test_results/
+coverage/
+
+# OS
+.DS_Store
+Thumbs.db

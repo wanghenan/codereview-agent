@@ -1,0 +1,111 @@
+{
+  "name": "codereview-agent",
+  "displayName": "CodeReview Agent",
+  "description": "AI-powered code review in VS Code - automatically review code changes with confidence scores",
+  "version": "0.1.0",
+  "publisher": "codereview-agent",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Developer Tools"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onDidSaveTextDocument"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "CodeReview Agent",
+      "properties": {
+        "codereview-agent.llmProvider": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "anthropic",
+            "zhipu",
+            "minimax",
+            "aliyun",
+            "deepseek"
+          ],
+          "default": "openai",
+          "description": "LLM Provider for code review"
+        },
+        "codereview-agent.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for the LLM provider"
+        },
+        "codereview-agent.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name (e.g., gpt-4, claude-3)"
+        },
+        "codereview-agent.autoReview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically review code on file save"
+        },
+        "codereview-agent.confidenceThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50,
+          "description": "Confidence threshold (0-100) for filtering issues"
+        },
+        "codereview-agent.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python interpreter for CodeReview Agent"
+        },
+        "codereview-agent.configPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to .codereview-agent.yaml config file"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "codereview-agent.runReview",
+        "title": "Run Code Review"
+      },
+      {
+        "command": "codereview-agent.clearResults",
+        "title": "Clear Review Results"
+      }
+    ],
+    "views": {
+      "codereviewSidebar": [
+        {
+          "id": "codereviewResults",
+          "name": "Code Review Results"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codereview-sidebar",
+          "title": "CodeReview Agent",
+          "icon": "media/icon.svg"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^18.19.130",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.8",
+    "typescript": "^5.3.3"
+  }
+}
