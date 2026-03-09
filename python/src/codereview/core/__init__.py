@@ -29,13 +29,21 @@ def __getattr__(name):
     elif name == "LLMFactory":
         from codereview.core.llm import LLMFactory
         return LLMFactory
+    elif name == "AutoMerger":
+        from codereview.core.auto_merger import AutoMerger
+        return AutoMerger
+    elif name == "create_auto_merger":
+        from codereview.core.auto_merger import create_auto_merger
+        return create_auto_merger
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
+    "AutoMerger",
     "CacheManager",
     "CodeFixer",
     "ConfigLoader",
+    "create_auto_merger",
     "FixOrchestrator",
     "FixResult",
     "FixSuggestion",

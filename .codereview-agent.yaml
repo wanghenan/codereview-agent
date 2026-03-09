@@ -28,3 +28,10 @@ output:
   prComment: true
   reportPath: .codereview-agent/output
   reportFormat: markdown
+  autoMerge:
+    enabled: false  # Default off - must be explicitly enabled
+    filePatterns: []  # Optional: limit to specific files, e.g., ["src/*.py", "*.js"]
+    conditions:
+      minConfidence: 90  # Minimum confidence percentage
+      maxSeverity: low  # Maximum risk level: low, medium, high
+      requireApproval: true  # Require at least 1 approval

@@ -103,12 +103,29 @@ class ConfigCache(BaseModel):
     force_refresh: bool = False
 
 
+class AutoMergeConditions(BaseModel):
+    """Conditions for auto merge."""
+
+    min_confidence: float = Field(default=90.0, ge=0, le=100, description="Minimum confidence percentage")
+    max_severity: RiskLevel = Field(default=RiskLevel.LOW, description="Maximum allowed risk level")
+    require_approval: bool = Field(default=True, description="Require at least one approval")
+
+
+class AutoMergeConfig(BaseModel):
+    """Auto merge configuration."""
+
+    enabled: bool = Field(default=False, description="Enable auto merge")
+    file_patterns: list[str] = Field(default_factory=list, description="File patterns to include for auto merge")
+    conditions: AutoMergeConditions = Field(default_factory=AutoMergeConditions)
+
+
 class OutputConfig(BaseModel):
     """Output configuration."""
 
     pr_comment: bool = True
     report_path: str = ".codereview-agent/output"
     report_format: str = "markdown"  # markdown, json, both
+    auto_merge: AutoMergeConfig = Field(default_factory=AutoMergeConfig)
 
 
 class Config(BaseModel):
@@ -120,25 +137,6 @@ class Config(BaseModel):
     cache: ConfigCache = Field(default_factory=ConfigCache)
     custom_prompt_path: Optional[str] = None
     output: OutputConfig = Field(default_factory=OutputConfig)
-
-
-class DiffEntry(BaseModel):
-    """CodeReview Agent configuration."""
-
-    llm: ConfigLLM
-    critical_paths: list[str] = Field(default_factory=list)
-    exclude_patterns: list[str] = Field(default_factory=list)
-    cache: ConfigCache = Field(default_factory=ConfigCache)
-    custom_prompt_path: Optional[str] = None
-    output: OutputConfig = Field(default_factory=OutputConfig)
-
-
-class OutputConfig(BaseModel):
-    """Output configuration."""
-
-    pr_comment: bool = True
-    report_path: str = ".codereview-agent/output"
-    report_format: str = "markdown"  # markdown, json, both
 
 
 class DiffEntry(BaseModel):
