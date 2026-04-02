@@ -27,6 +27,14 @@ class LLMProvider(str, Enum):
     DEEPSEEK = "deepseek"
 
 
+class MergeMethod(str, Enum):
+    """GitHub merge method."""
+
+    SQUASH = "squash"
+    MERGE = "merge"
+    REBASE = "rebase"
+
+
 class FileIssue(BaseModel):
     """An issue found in a file during review."""
 
@@ -116,6 +124,7 @@ class AutoMergeConfig(BaseModel):
 
     enabled: bool = Field(default=False, description="Enable auto merge")
     file_patterns: list[str] = Field(default_factory=list, description="File patterns to include for auto merge")
+    merge_method: MergeMethod = Field(default=MergeMethod.SQUASH, description="Merge method (squash, merge, or rebase)")
     conditions: AutoMergeConditions = Field(default_factory=AutoMergeConditions)
 
 
@@ -126,6 +135,7 @@ class OutputConfig(BaseModel):
     report_path: str = ".codereview-agent/output"
     report_format: str = "markdown"  # markdown, json, both
     auto_merge: AutoMergeConfig = Field(default_factory=AutoMergeConfig)
+    merge_method: MergeMethod = Field(default=MergeMethod.SQUASH, description="Default merge method for auto-merge")
 
 
 class Config(BaseModel):

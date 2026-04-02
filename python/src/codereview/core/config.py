@@ -129,6 +129,18 @@ output:
   reportPath: .codereview-agent/output  # Where to save reports
   reportFormat: markdown  # markdown | json | both
 
+  # Auto merge configuration
+  autoMerge:
+    enabled: false  # Set to true to enable auto-merge
+    mergeMethod: squash  # squash | merge | rebase
+    filePatterns:  # Only auto-merge files matching these patterns
+      - "src/**"
+      - "lib/**"
+    conditions:
+      minConfidence: 85  # Minimum confidence percentage to auto-merge
+      maxSeverity: medium  # high | medium | low - max risk level allowed
+      requireApproval: true  # Require at least one approval
+
 # Custom prompt (optional)
 # customPrompt: ./custom-prompt.template
 """

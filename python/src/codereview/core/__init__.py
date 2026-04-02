@@ -35,6 +35,15 @@ def __getattr__(name):
     elif name == "create_auto_merger":
         from codereview.core.auto_merger import create_auto_merger
         return create_auto_merger
+    elif name == "GitHubClient":
+        from codereview.core.github_client import GitHubClient
+        return GitHubClient
+    elif name == "create_github_client":
+        from codereview.core.github_client import create_github_client
+        return create_github_client
+    elif name == "MergeMethod":
+        from codereview.core.github_client import MergeMethod
+        return MergeMethod
     elif name == "HistoryTracker":
         from codereview.core.history_tracker import HistoryTracker
         return HistoryTracker
@@ -47,13 +56,16 @@ __all__ = [
     "CodeFixer",
     "ConfigLoader",
     "create_auto_merger",
+    "create_github_client",
     "create_team_insights",
     "FixOrchestrator",
     "FixResult",
     "FixSuggestion",
     "FixType",
+    "GitHubClient",
     "HistoryTracker",
     "LLMFactory",
+    "MergeMethod",
     "TeamInsights",
     "VersionDetector",
 ]

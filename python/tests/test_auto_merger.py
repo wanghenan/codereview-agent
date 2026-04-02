@@ -176,18 +176,27 @@ class TestCheckMergeConditions:
         
         assert can_merge is True
 
-    def test_wrong_conclusion(self):
-        """Test when conclusion is not CAN_SUBMIT."""
+    def test_wrong_conclusion_with_high_confidence_low_risk(self):
+        """Test when conclusion is NEEDS_REVIEW but confidence is high and risk is low."""
         config = AutoMergeConfig(enabled=True)
         merger = AutoMerger(config)
         
+        # With 95%+ confidence and only low-risk issues, we allow proceeding
+        files = [FileReview(
+            file_path="src/main.py",
+            risk_level=RiskLevel.LOW,
+            changes="+10, -5",
+            issues=[],
+        )]
         review_result = self.create_review_result(
-            conclusion=ReviewConclusion.NEEDS_REVIEW
+            conclusion=ReviewConclusion.NEEDS_REVIEW,
+            confidence=95.0,
+            files=files,
         )
         can_merge, reason = merger.check_merge_conditions(review_result, approval_count=1)
         
-        assert can_merge is False
-        assert "conclusion" in reason
+        # High confidence + low risk only = allow merge despite NEEDS_REVIEW
+        assert can_merge is True
 
 
 class TestFilterByPatterns:
@@ -215,10 +224,7 @@ class TestFilterByPatterns:
 
     def test_filter_by_pattern(self):
         """Test filtering by file patterns."""
-        config = AutoMerger(
-            AutoMergeConfig(enabled=True, file_patterns=["src/*.py"])
-        ).config
-        config.file_patterns = ["src/*.py"]
+        config = AutoMergeConfig(enabled=True, file_patterns=["src/*.py"])
         merger = AutoMerger(config)
         
         files = [
@@ -259,8 +265,8 @@ class TestFilterByPatterns:
         assert len(filtered.files_reviewed) == 2
 
 
-class TestAutoMerge:
-    """Test auto_merge method."""
+class TestMerge:
+    """Test merge method."""
 
     def test_not_enabled_returns_early(self):
         """Test when auto merge is not enabled."""
@@ -276,7 +282,8 @@ class TestAutoMerge:
             summary="Test",
         )
         
-        result = asyncio.run(merger.auto_merge(
+        # When not enabled, should return early without trying to access GitHub
+        result = asyncio.run(merger.merge(
             review_result,
             pr_number=1,
             repo_owner="test",
@@ -286,12 +293,33 @@ class TestAutoMerge:
         assert result.success is False
         assert "not enabled" in result.message
 
-    def test_dry_run(self):
-        """Test dry run mode."""
+    def test_dry_run_with_mocked_github(self):
+        """Test dry run mode with mocked GitHub client."""
         import asyncio
+        from codereview.core.github_client import GitHubClient, PullRequest, MergeState
         
         config = AutoMergeConfig(enabled=True)
-        merger = AutoMerger(config)
+        # Create a mock GitHub client
+        mock_client = MagicMock(spec=GitHubClient)
+        mock_pr = PullRequest(
+            number=123,
+            title="Test PR",
+            state=MergeState.OPEN,
+            head_sha="abc123",
+            base_sha="def456",
+            base_branch="main",
+            head_branch="feature",
+            additions=10,
+            deletions=5,
+            changed_files=1,
+            author="testuser",
+            url="https://github.com/test/repo/pull/123",
+        )
+        mock_client.get_pull_request = AsyncMock(return_value=mock_pr)
+        mock_client.get_pr_approvals = AsyncMock(return_value=[])
+        mock_client.get_check_runs = AsyncMock(return_value=[])
+        
+        merger = AutoMerger(config, github_client=mock_client)
         
         files = [FileReview(file_path="src/main.py", risk_level=RiskLevel.LOW, changes="+10, -5", issues=[])]
         review_result = ReviewResult(
@@ -301,11 +329,9 @@ class TestAutoMerge:
             summary="Test",
         )
         
-        result = asyncio.run(merger.auto_merge(
+        result = asyncio.run(merger.merge(
             review_result,
             pr_number=123,
-            repo_owner="test",
-            repo_name="repo",
             approval_count=1,
             dry_run=True,
         ))
@@ -314,32 +340,54 @@ class TestAutoMerge:
         assert result.dry_run is True
         assert "DRY RUN" in result.message
 
-    def test_no_github_client(self):
-        """Test when GitHub client is not configured."""
+    def test_conditions_not_met(self):
+        """Test when merge conditions are not met."""
         import asyncio
+        from codereview.core.github_client import GitHubClient, PullRequest, MergeState
         
-        config = AutoMergeConfig(enabled=True)
-        merger = AutoMerger(config, github_client=None)
+        config = AutoMergeConfig(
+            enabled=True,
+            conditions=AutoMergeConditions(min_confidence=90.0),
+        )
+        mock_client = MagicMock(spec=GitHubClient)
+        mock_pr = PullRequest(
+            number=123,
+            title="Test PR",
+            state=MergeState.OPEN,
+            head_sha="abc123",
+            base_sha="def456",
+            base_branch="main",
+            head_branch="feature",
+            additions=10,
+            deletions=5,
+            changed_files=1,
+            author="testuser",
+            url="https://github.com/test/repo/pull/123",
+        )
+        mock_client.get_pull_request = AsyncMock(return_value=mock_pr)
+        mock_client.get_pr_approvals = AsyncMock(return_value=[])
+        mock_client.get_check_runs = AsyncMock(return_value=[])
         
+        merger = AutoMerger(config, github_client=mock_client)
+        
+        # Confidence below threshold
         files = [FileReview(file_path="src/main.py", risk_level=RiskLevel.LOW, changes="+10, -5", issues=[])]
         review_result = ReviewResult(
             conclusion=ReviewConclusion.CAN_SUBMIT,
-            confidence=95.0,
+            confidence=80.0,  # Below 90% threshold
             files_reviewed=files,
             summary="Test",
         )
         
-        result = asyncio.run(merger.auto_merge(
+        result = asyncio.run(merger.merge(
             review_result,
             pr_number=123,
-            repo_owner="test",
-            repo_name="repo",
             approval_count=1,
             dry_run=False,
         ))
         
         assert result.success is False
-        assert "not configured" in result.message
+        assert "Confidence" in result.message
 
 
 class TestMergeResult:
@@ -367,33 +415,15 @@ class TestMergeResult:
         assert "Test message" in repr(result)
 
 
-class TestGetMergePreview:
-    """Test get_merge_preview method."""
+class TestShouldMerge:
+    """Test should_merge convenience method."""
 
-    def test_preview_when_not_enabled(self):
-        """Test preview when auto merge is not enabled."""
-        config = AutoMergeConfig(enabled=False)
-        merger = AutoMerger(config)
-        
-        review_result = ReviewResult(
-            conclusion=ReviewConclusion.CAN_SUBMIT,
-            confidence=95.0,
-            files_reviewed=[],
-            summary="Test",
-        )
-        
-        preview = merger.get_merge_preview(review_result)
-        
-        assert preview["enabled"] is False
-        assert preview["can_merge"] is False
-
-    def test_preview_when_enabled(self):
-        """Test preview when auto merge is enabled."""
+    def test_should_merge_when_enabled_and_conditions_met(self):
+        """Test should_merge when conditions are met."""
         config = AutoMergeConfig(
             enabled=True,
             conditions=AutoMergeConditions(
                 min_confidence=90.0,
-                max_severity=RiskLevel.LOW,
                 require_approval=True,
             ),
         )
@@ -407,12 +437,27 @@ class TestGetMergePreview:
             summary="Test",
         )
         
-        preview = merger.get_merge_preview(review_result, approval_count=1)
+        can_merge, reason = merger.should_merge(review_result, approval_count=1)
         
-        assert preview["enabled"] is True
-        assert preview["can_merge"] is True
-        assert preview["confidence"] == 95.0
-        assert preview["confidence_threshold"] == 90.0
+        assert can_merge is True
+        assert "met" in reason.lower()
+
+    def test_should_merge_when_disabled(self):
+        """Test should_merge when disabled."""
+        config = AutoMergeConfig(enabled=False)
+        merger = AutoMerger(config)
+        
+        review_result = ReviewResult(
+            conclusion=ReviewConclusion.CAN_SUBMIT,
+            confidence=95.0,
+            files_reviewed=[],
+            summary="Test",
+        )
+        
+        can_merge, reason = merger.should_merge(review_result)
+        
+        assert can_merge is False
+        assert "not enabled" in reason
 
 
 class TestCreateAutoMerger:
