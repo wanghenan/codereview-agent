@@ -36,12 +36,17 @@
 ### 🔧 智能修复 - 一键修复代码问题
 
 ```bash
-# 预览修复建议
+# 预览修复（显示风险汇总 + 文件列表 + Git-style Diff）
 python -m codereview.cli fix --pr 123
 
 # 应用修复
 python -m codereview.cli fix --pr 123 --apply
 ```
+
+**🆕 预览增强：**
+- 📊 风险级别汇总（🔴高 / 🟡中 / 🟢低 各多少）
+- 📄 按文件分组显示
+- 📝 Git-style Diff 预览
 
 **[→ 智能修复完整指南](./docs/fix-command.md)**
 

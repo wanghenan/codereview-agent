@@ -84,33 +84,39 @@ python -m codereview.cli fix --pr 123 --min-risk low
   CodeReview Agent Fix 🔍 DRY RUN
 ============================================================
 
-📊 Summary:
-   Issues found: 5
-   Fixes generated: 5
-   (Run with --apply to apply fixes)
+📊 Risk Summary:
+   🔴 High: 2
+   🟡 Medium: 1
+   🟢 Low: 2
+   Total: 5 fixes
+
+   💡 Run with --apply to apply these fixes
 
 ============================================================
-  Fix Preview
+  📄 Files Summary (2 files)
 ============================================================
 
-🔧 Fix #1: src/auth.py:42
-   Risk: HIGH
+  📄 src/auth.py (3 fixes)
+     🔴 #1:42 - SQL injection vulnerability in raw query...
+     🔴 #2:58 - Hardcoded password found in source code...
+     🟡 #3:101 - Unused import statement detected...
+
+  📄 src/utils.py (2 fixes)
+     🟢 #4:15 - Variable naming convention violation...
+     🟢 #5:28 - Missing docstring for public method...
+
+============================================================
+  🔍 Diff Preview
+============================================================
+
+🔧 #1 | src/auth.py:42 | HIGH
    Issue: Potential SQL injection vulnerability in raw query
 
-   Original:
-      cursor.execute(f"SELECT * FROM users WHERE name = '{username}'")
+   --- Original
+   -  cursor.execute(f"SELECT * FROM users WHERE name = '{username}'")
+   +  cursor.execute("SELECT * FROM users WHERE name = %s", (username,))
 
-   Fixed:
-      cursor.execute("SELECT * FROM users WHERE name = %s", (username,))
-
-   Explanation: Use parameterized query instead of string interpolation
-
-   Diff:
-      --- original
-      +++ fixed
-      @@ -40,3 +40,3 @@
-      -        cursor.execute(f"SELECT * FROM users WHERE name = '{username}'")
-      +        cursor.execute("SELECT * FROM users WHERE name = %s", (username,))
+   💡 Use parameterized query instead of string interpolation
 ```
 
 ---
