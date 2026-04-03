@@ -9,12 +9,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Optional
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langgraph.graph import StateGraph, END
+from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import END, StateGraph
+from tqdm import tqdm
 
 from codereview.models import (
     Config,
@@ -22,16 +24,17 @@ from codereview.models import (
     FileIssue,
     FileReview,
     ProjectContext,
-    RiskLevel,
     ReviewConclusion,
     ReviewResult,
+    RiskLevel,
 )
 
 logger = logging.getLogger(__name__)
 
 # Try to import rule engine
 try:
-    from codereview.rules import RuleEngine, create_rule_engine
+    from codereview.rules import RuleEngine, create_rule_engine  # noqa: F401
+
     RULES_AVAILABLE = True
 except ImportError:
     RULES_AVAILABLE = False
@@ -105,8 +108,6 @@ class ReviewAgent:
         project_context: ProjectContext,
         rule_engine: Optional[Any] = None,
         file_cache: Optional[Any] = None,
-        max_concurrency: int = 5,
-        timeout_seconds: float = 30.0,
     ):
         """Initialize review agent.
 
@@ -116,16 +117,14 @@ class ReviewAgent:
             project_context: Pre-analyzed project context
             rule_engine: Optional rule engine for static analysis
             file_cache: Optional file-level review cache
-            max_concurrency: Maximum concurrent file reviews
-            timeout_seconds: Timeout for each file review
         """
         self.config = config
         self.llm = llm
         self.project_context = project_context
         self.rule_engine = rule_engine
         self.file_cache = file_cache
-        self.max_concurrency = max_concurrency
-        self.timeout_seconds = timeout_seconds
+        self.max_concurrency = config.max_concurrency
+        self.timeout_seconds = config.timeout_seconds
 
     async def review_files(self, diff_entries: list[DiffEntry]) -> list[FileReview]:
         """Review multiple files with parallel processing.
@@ -176,11 +175,18 @@ class ReviewAgent:
 
         total = len(tasks)
 
-        # Run remaining reviews in parallel
         if tasks:
+            pbar = tqdm(
+                tasks,
+                desc="Reviewing",
+                unit="file",
+                disable=len(tasks) <= 1 or bool(os.getenv("TQDM_DISABLE")),
+            )
             # Use as_completed to process results as they come in
-            for coro in asyncio.as_completed(tasks):
+            for coro in asyncio.as_completed(pbar):
                 entry, review = await coro
+                pbar.update(1)
+                pbar.set_postfix(file=entry.filename[:30] if entry.filename else "unknown")
 
                 if isinstance(review, Exception):
                     logger.error(f"Review failed for {entry.filename}: {review}")
@@ -190,11 +196,8 @@ class ReviewAgent:
 
                     # Cache the result
                     if self.file_cache and review.file_path and entry.patch:
-                        self.file_cache.save(
-                            review.file_path,
-                            entry.patch,
-                            review.model_dump()
-                        )
+                        self.file_cache.save(review.file_path, entry.patch, review.model_dump())
+            pbar.close()
 
         # Add cached results
         results.extend(cached_results.values())
@@ -228,7 +231,7 @@ class ReviewAgent:
             except Exception as e:
                 last_error = e
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
+                    wait_time = 2**attempt  # Exponential backoff: 1, 2, 4 seconds
                     logger.warning(
                         f"Review failed for {entry.filename} (attempt {attempt + 1}/{max_retries}): {e}. "
                         f"Retrying in {wait_time}s..."
@@ -244,12 +247,14 @@ class ReviewAgent:
             file_path=entry.filename,
             risk_level=RiskLevel.MEDIUM,
             changes=f"+{entry.additions}, -{entry.deletions}",
-            issues=[FileIssue(
-                file_path=entry.filename,
-                risk_level=RiskLevel.MEDIUM,
-                description=f"Review failed after {max_retries} attempts: {last_error}",
-                suggestion="Consider reviewing this file manually or breaking it into smaller changes"
-            )],
+            issues=[
+                FileIssue(
+                    file_path=entry.filename,
+                    risk_level=RiskLevel.MEDIUM,
+                    description=f"Review failed after {max_retries} attempts: {last_error}",
+                    suggestion="Consider reviewing this file manually or breaking it into smaller changes",
+                )
+            ],
         )
 
     def _should_exclude(self, filename: str) -> bool:
@@ -274,8 +279,7 @@ class ReviewAgent:
         static_issues = []
         if self.rule_engine and entry.patch:
             static_issues = self.rule_engine.detect_in_diff(
-                entry.patch, 
-                language=self._detect_language(entry.filename)
+                entry.patch, language=self._detect_language(entry.filename)
             )
 
         # Build static results summary for prompt
@@ -304,7 +308,7 @@ class ReviewAgent:
                         "patch": entry.patch or "No diff available",
                     }
                 ),
-                timeout=self.timeout_seconds
+                timeout=self.timeout_seconds,
             )
 
             # Parse result into FileReview
@@ -349,7 +353,7 @@ class ReviewAgent:
         except asyncio.TimeoutError:
             # Re-raise timeout so retry logic can handle it
             raise
-        except Exception as e:
+        except Exception:
             # Re-raise other exceptions so retry logic can handle them
             raise
 
@@ -380,7 +384,9 @@ class ReviewAgent:
                     prompt_template = custom_path.read_text(encoding="utf-8")
                     logger.info(f"Using custom prompt from {custom_path}")
                 except Exception as e:
-                    logger.warning(f"Failed to load custom prompt {custom_path}: {e}, using default")
+                    logger.warning(
+                        f"Failed to load custom prompt {custom_path}: {e}, using default"
+                    )
 
         return ChatPromptTemplate.from_messages(
             [("system", prompt_template), ("user", """Review this code change.""")]

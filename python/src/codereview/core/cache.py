@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from codereview.models import ProjectContext
 
@@ -24,22 +24,22 @@ except ImportError:
 class FileReviewCache:
     """Cache for individual file review results to enable incremental review."""
 
-    CACHE_DIR = Path(".codereview-agent/cache")
-    FILE_CACHE_DIR = CACHE_DIR / "file_reviews"
-
-    def __init__(self, cache_ttl_days: int = 7):
+    def __init__(self, cache_ttl_days: int = 7, cache_dir: str = ".codereview-agent/cache"):
         """Initialize file review cache.
 
         Args:
             cache_ttl_days: Cache time-to-live in days
+            cache_dir: Directory for cache storage
         """
         self.cache_ttl_days = cache_ttl_days
+        self.cache_dir = Path(cache_dir)
+        self.file_cache_dir = self.cache_dir / "file_reviews"
         self._ensure_cache_dir()
 
     def _ensure_cache_dir(self) -> None:
         """Ensure cache directories exist."""
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.FILE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.file_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _normalize_patch(self, patch: str) -> str:
         """Normalize patch for consistent hashing.
@@ -118,7 +118,7 @@ class FileReviewCache:
         """
         # Use safe filename
         safe_filename = filename.replace("/", "_").replace("\\", "_")
-        return self.FILE_CACHE_DIR / f"{safe_filename}.json"
+        return self.file_cache_dir / f"{safe_filename}.json"
 
     def get(self, filename: str, patch: str) -> Optional[dict]:
         """Get cached review result for a file.
@@ -131,7 +131,7 @@ class FileReviewCache:
             Cached review result or None if not found/expired
         """
         cache_path = self._get_cache_path(filename)
-        
+
         if not cache_path.exists():
             return None
 
@@ -190,8 +190,8 @@ class FileReviewCache:
 
     def invalidate_all(self) -> None:
         """Invalidate all file review caches."""
-        if self.FILE_CACHE_DIR.exists():
-            for cache_file in self.FILE_CACHE_DIR.glob("*.json"):
+        if self.file_cache_dir.exists():
+            for cache_file in self.file_cache_dir.glob("*.json"):
                 cache_file.unlink()
 
     def get_stats(self) -> dict:
@@ -200,7 +200,7 @@ class FileReviewCache:
         Returns:
             Dictionary with cache stats
         """
-        if not self.FILE_CACHE_DIR.exists():
+        if not self.file_cache_dir.exists():
             return {"total": 0, "valid": 0, "expired": 0}
 
         total = 0
@@ -208,7 +208,7 @@ class FileReviewCache:
         expired = 0
         now = datetime.now()
 
-        for cache_file in self.FILE_CACHE_DIR.glob("*.json"):
+        for cache_file in self.file_cache_dir.glob("*.json"):
             total += 1
             try:
                 with open(cache_file) as f:
@@ -228,29 +228,34 @@ class FileReviewCache:
 class CacheManager:
     """Manage project context cache and file review cache."""
 
-    CACHE_DIR = Path(".codereview-agent/cache")
-    CACHE_FILE = CACHE_DIR / "project-context.json"
-
-    def __init__(self, cache_ttl_days: int = 7, enable_file_cache: bool = True):
+    def __init__(
+        self,
+        cache_ttl_days: int = 7,
+        enable_file_cache: bool = True,
+        cache_dir: str = ".codereview-agent/cache",
+    ):
         """Initialize cache manager.
 
         Args:
             cache_ttl_days: Project context cache time-to-live in days
             enable_file_cache: Enable file-level review caching
+            cache_dir: Directory for cache storage
         """
         self.cache_ttl_days = cache_ttl_days
+        self.cache_dir = Path(cache_dir)
+        self.cache_file = self.cache_dir / "project-context.json"
         self._ensure_cache_dir()
-        
+
         # Initialize file review cache
-        self.file_cache = FileReviewCache(cache_ttl_days) if enable_file_cache else None
+        self.file_cache = FileReviewCache(cache_ttl_days, cache_dir) if enable_file_cache else None
 
     def _ensure_cache_dir(self) -> None:
         """Ensure cache directory exists."""
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def get_cache_path(self) -> Path:
         """Get path to cache file."""
-        return self.CACHE_FILE
+        return self.cache_file
 
     def load(self) -> Optional[ProjectContext]:
         """Load cached project context if valid.
@@ -258,11 +263,11 @@ class CacheManager:
         Returns:
             Cached context if valid, None otherwise
         """
-        if not self.CACHE_FILE.exists():
+        if not self.cache_file.exists():
             return None
 
         try:
-            with open(self.CACHE_FILE) as f:
+            with open(self.cache_file) as f:
                 data = json.load(f)
 
             # Check if cache is expired
@@ -286,13 +291,15 @@ class CacheManager:
 
         self._ensure_cache_dir()
 
-        with open(self.CACHE_FILE, "w") as f:
+        tmp = self.cache_file.with_suffix(f".{os.getpid()}.tmp")
+        with open(tmp, "w") as f:
             json.dump(context.model_dump(), f, indent=2)
+        os.replace(tmp, self.cache_file)
 
     def invalidate(self) -> None:
         """Invalidate the cache."""
-        if self.CACHE_FILE.exists():
-            self.CACHE_FILE.unlink()
+        if self.cache_file.exists():
+            self.cache_file.unlink()
 
     def get_cache_info(self) -> dict:
         """Get information about the current cache.
@@ -300,17 +307,17 @@ class CacheManager:
         Returns:
             Cache info dict with timestamp and version
         """
-        if not self.CACHE_FILE.exists():
+        if not self.cache_file.exists():
             return {"exists": False}
 
         try:
-            stat = self.CACHE_FILE.stat()
+            stat = self.cache_file.stat()
             modified = datetime.fromtimestamp(stat.st_mtime)
 
             # Try to read version
             version = "unknown"
             try:
-                with open(self.CACHE_FILE) as f:
+                with open(self.cache_file) as f:
                     data = json.load(f)
                     version = data.get("version", "unknown")
             except Exception:

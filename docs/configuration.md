@@ -13,6 +13,30 @@ llm:
   apiKey: ${LLM_API_KEY}   # 或直接填入 API Key
   model: abab6.5s-chat      # 模型名称 (可选)
   baseUrl: ""               # 自定义 API 地址 (可选)
+  temperature: 0.7          # 采样温度 (0.0-2.0，默认 0.7)
+  fallback_providers:       # LLM fallback 链
+    - provider: anthropic
+      apiKey: ${ANTHROPIC_API_KEY}
+    - provider: zhipu
+      apiKey: ${ZHIPU_API_KEY}
+
+# 最大并发审查文件数
+max_concurrency: 3          # 默认 3
+
+# 单文件审查超时（秒）
+timeout_seconds: 60         # 默认 60
+
+# 缓存目录
+cache_dir: .codereview-agent/cache  # 缓存目录路径
+
+# 各 provider 的默认模型
+default_models:
+  openai: gpt-4o
+  anthropic: claude-sonnet-4.6
+  zhipu: glm-4-flash
+  minimax: abab6.5s-chat
+  qwen: qwen-plus
+  deepseek: deepseek-chat
 
 # 关键路径 - 高风险区域，重点审查
 criticalPaths:

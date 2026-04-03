@@ -6,15 +6,17 @@ for the code review process.
 
 from __future__ import annotations
 
-import json
+import logging
 from pathlib import Path
 from typing import Any
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langgraph.graph import StateGraph, END
+from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import END, StateGraph
 
 from codereview.models import Config, ProjectContext
+
+logger = logging.getLogger(__name__)
 
 
 # State for the analyzer agent
@@ -164,8 +166,8 @@ class ProjectAnalyzer:
                 version="1.0.0",  # Will be updated by cache manager
                 analyzed_at=datetime.now().isoformat(),
             )
-        except Exception as e:
-            # Fallback to basic context if LLM fails
+        except Exception:
+            logger.warning("Failed to analyze project context, using defaults")
             return ProjectContext(
                 tech_stack=["unknown"],
                 language="unknown",

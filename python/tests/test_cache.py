@@ -18,11 +18,10 @@ class TestFileReviewCache:
     def setup_method(self):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
-        self.cache = FileReviewCache(cache_ttl_days=7)
-        # Override cache directory for testing
-        self.cache.CACHE_DIR = Path(self.temp_dir) / ".codereview-agent/cache"
-        self.cache.FILE_CACHE_DIR = self.cache.CACHE_DIR / "file_reviews"
-        self.cache._ensure_cache_dir()
+        self.cache = FileReviewCache(
+            cache_ttl_days=7,
+            cache_dir=str(Path(self.temp_dir) / ".codereview-agent/cache")
+        )
 
     def teardown_method(self):
         """Clean up test fixtures."""
@@ -32,8 +31,8 @@ class TestFileReviewCache:
     def test_cache_initialization(self):
         """Test cache initialization."""
         assert self.cache.cache_ttl_days == 7
-        assert self.cache.CACHE_DIR.exists()
-        assert self.cache.FILE_CACHE_DIR.exists()
+        assert self.cache.cache_dir.exists()
+        assert self.cache.file_cache_dir.exists()
 
     def test_get_file_hash(self):
         """Test file hash generation."""
@@ -58,11 +57,10 @@ class TestFileReviewCache:
 
     def test_get_expired_cache(self):
         """Test getting expired cache returns None."""
-        # Save with very short TTL
-        cache = FileReviewCache(cache_ttl_days=0)
-        cache.CACHE_DIR = Path(self.temp_dir) / ".codereview-agent/cache"
-        cache.FILE_CACHE_DIR = cache.CACHE_DIR / "file_reviews"
-        cache._ensure_cache_dir()
+        cache = FileReviewCache(
+            cache_ttl_days=0,
+            cache_dir=str(Path(self.temp_dir) / ".codereview-agent/cache_expired")
+        )
 
         filename = "test.py"
         patch_content = "@@ diff"
@@ -70,7 +68,6 @@ class TestFileReviewCache:
 
         cache.save(filename, patch_content, result)
 
-        # Should be expired immediately
         cached = cache.get(filename, patch_content)
         assert cached is None
 
@@ -82,7 +79,6 @@ class TestFileReviewCache:
 
         self.cache.save(filename, patch_content, result)
 
-        # Try to get with different patch
         cached = self.cache.get(filename, "different diff")
         assert cached is None
 
@@ -103,11 +99,11 @@ class TestFileReviewCache:
         self.cache.save("test1.py", "diff1", {"issues": []})
         self.cache.save("test2.py", "diff2", {"issues": []})
 
-        assert len(list(self.cache.FILE_CACHE_DIR.glob("*.json"))) == 2
+        assert len(list(self.cache.file_cache_dir.glob("*.json"))) == 2
 
         self.cache.invalidate_all()
 
-        assert len(list(self.cache.FILE_CACHE_DIR.glob("*.json"))) == 0
+        assert len(list(self.cache.file_cache_dir.glob("*.json"))) == 0
 
     def test_get_stats(self):
         """Test cache statistics."""
@@ -128,7 +124,6 @@ class TestFileReviewCache:
         patch2 = """+console.log('hello')
 -console.log('world')
 """
-        # Both should normalize to same value
         norm1 = self.cache._normalize_patch(patch1)
         norm2 = self.cache._normalize_patch(patch2)
         assert norm1 == norm2
@@ -141,7 +136,6 @@ class TestFileReviewCache:
 """
         norm = self.cache._normalize_patch(patch)
         lines = norm.split("\n")
-        # Should have only 2 unique lines
         assert lines.count("+line1") == 1
         assert "+line2" in lines
 
@@ -166,10 +160,10 @@ class TestCacheManager:
     def setup_method(self):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
-        self.cache_manager = CacheManager(cache_ttl_days=7)
-        self.cache_manager.CACHE_DIR = Path(self.temp_dir) / ".codereview-agent/cache"
-        self.cache_manager.CACHE_FILE = self.cache_manager.CACHE_DIR / "project-context.json"
-        self.cache_manager._ensure_cache_dir()
+        self.cache_manager = CacheManager(
+            cache_ttl_days=7,
+            cache_dir=str(Path(self.temp_dir) / ".codereview-agent/cache")
+        )
 
     def teardown_method(self):
         """Clean up test fixtures."""
@@ -180,28 +174,29 @@ class TestCacheManager:
         """Test cache manager initialization."""
         assert self.cache_manager.cache_ttl_days == 7
         assert self.cache_manager.file_cache is not None
-        assert self.cache_manager.CACHE_DIR.exists()
+        assert self.cache_manager.cache_dir.exists()
 
     def test_get_cache_path(self):
         """Test getting cache path."""
         path = self.cache_manager.get_cache_path()
-        assert path == self.cache_manager.CACHE_FILE
+        assert path == self.cache_manager.cache_file
 
     def test_save_and_load(self):
         """Test saving and loading project context."""
-        # Create mock project context
-        mock_context = MagicMock()
-        mock_context.analyzed_at = datetime.now().isoformat()
-        mock_context.model_dump.return_value = {
-            "project_name": "test-project",
-            "analyzed_at": datetime.now().isoformat(),
-        }
+        from codereview.models import ProjectContext
 
-        self.cache_manager.save(mock_context)
+        ctx = ProjectContext(
+            tech_stack=["python"],
+            language="python",
+            critical_paths=[],
+            analyzed_at=datetime.now().isoformat(),
+        )
+
+        self.cache_manager.save(ctx)
         loaded = self.cache_manager.load()
 
-        # Cache file should exist
-        assert self.cache_manager.CACHE_FILE.exists()
+        assert self.cache_manager.cache_file.exists()
+        assert loaded is not None
 
     def test_load_no_cache(self):
         """Test loading when no cache exists."""
@@ -210,15 +205,20 @@ class TestCacheManager:
 
     def test_invalidate(self):
         """Test cache invalidation."""
-        mock_context = MagicMock()
-        mock_context.analyzed_at = datetime.now().isoformat()
-        mock_context.model_dump.return_value = {}
+        from codereview.models import ProjectContext
 
-        self.cache_manager.save(mock_context)
-        assert self.cache_manager.CACHE_FILE.exists()
+        ctx = ProjectContext(
+            tech_stack=["python"],
+            language="python",
+            critical_paths=[],
+            analyzed_at=datetime.now().isoformat(),
+        )
+
+        self.cache_manager.save(ctx)
+        assert self.cache_manager.cache_file.exists()
 
         self.cache_manager.invalidate()
-        assert not self.cache_manager.CACHE_FILE.exists()
+        assert not self.cache_manager.cache_file.exists()
 
     def test_get_cache_info_no_cache(self):
         """Test getting cache info when no cache exists."""
@@ -229,20 +229,17 @@ class TestCacheManager:
         """Test cache validity check."""
         assert self.cache_manager.is_valid() is False
 
-        # Save a mock context
-        mock_context = MagicMock()
-        mock_context.analyzed_at = datetime.now().isoformat()
-        mock_context.model_dump.return_value = {
-            "project_name": "test",
-            "analyzed_at": datetime.now().isoformat(),
-        }
+        from codereview.models import ProjectContext
 
-        self.cache_manager.save(mock_context)
-        
-        # After saving, should still be False because the mock model
-        # doesn't match the expected ProjectContext structure
-        # Just verify the cache file was created
-        assert self.cache_manager.CACHE_FILE.exists()
+        ctx = ProjectContext(
+            tech_stack=["python"],
+            language="python",
+            critical_paths=[],
+            analyzed_at=datetime.now().isoformat(),
+        )
+
+        self.cache_manager.save(ctx)
+        assert self.cache_manager.cache_file.exists()
 
 
 class TestVersionDetector:

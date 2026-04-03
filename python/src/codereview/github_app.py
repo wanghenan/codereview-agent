@@ -5,9 +5,7 @@ This module provides the GitHub App functionality for CodeReview Agent.
 """
 
 import asyncio
-import json
 import os
-from pathlib import Path
 
 from aiohttp import web
 

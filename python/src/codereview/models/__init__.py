@@ -102,6 +102,7 @@ class ConfigLLM(BaseModel):
     model: Optional[str] = None
     base_url: Optional[str] = None
     temperature: float = 0.7
+    fallback_providers: list[LLMProvider] = Field(default_factory=list)
 
 
 class ConfigCache(BaseModel):
@@ -114,7 +115,9 @@ class ConfigCache(BaseModel):
 class AutoMergeConditions(BaseModel):
     """Conditions for auto merge."""
 
-    min_confidence: float = Field(default=90.0, ge=0, le=100, description="Minimum confidence percentage")
+    min_confidence: float = Field(
+        default=90.0, ge=0, le=100, description="Minimum confidence percentage"
+    )
     max_severity: RiskLevel = Field(default=RiskLevel.LOW, description="Maximum allowed risk level")
     require_approval: bool = Field(default=True, description="Require at least one approval")
 
@@ -123,8 +126,12 @@ class AutoMergeConfig(BaseModel):
     """Auto merge configuration."""
 
     enabled: bool = Field(default=False, description="Enable auto merge")
-    file_patterns: list[str] = Field(default_factory=list, description="File patterns to include for auto merge")
-    merge_method: MergeMethod = Field(default=MergeMethod.SQUASH, description="Merge method (squash, merge, or rebase)")
+    file_patterns: list[str] = Field(
+        default_factory=list, description="File patterns to include for auto merge"
+    )
+    merge_method: MergeMethod = Field(
+        default=MergeMethod.SQUASH, description="Merge method (squash, merge, or rebase)"
+    )
     conditions: AutoMergeConditions = Field(default_factory=AutoMergeConditions)
 
 
@@ -135,7 +142,9 @@ class OutputConfig(BaseModel):
     report_path: str = ".codereview-agent/output"
     report_format: str = "markdown"  # markdown, json, both
     auto_merge: AutoMergeConfig = Field(default_factory=AutoMergeConfig)
-    merge_method: MergeMethod = Field(default=MergeMethod.SQUASH, description="Default merge method for auto-merge")
+    merge_method: MergeMethod = Field(
+        default=MergeMethod.SQUASH, description="Default merge method for auto-merge"
+    )
 
 
 class Config(BaseModel):
@@ -147,6 +156,10 @@ class Config(BaseModel):
     cache: ConfigCache = Field(default_factory=ConfigCache)
     custom_prompt_path: Optional[str] = None
     output: OutputConfig = Field(default_factory=OutputConfig)
+    max_concurrency: int = Field(default=5, ge=1, le=50)
+    timeout_seconds: float = Field(default=30.0, ge=5.0, le=300.0)
+    cache_dir: str = ".codereview-agent/cache"
+    default_models: Optional[dict[str, str]] = None
 
 
 class DiffEntry(BaseModel):

@@ -9,32 +9,29 @@ This module provides enhanced visual reporting capabilities including:
 from __future__ import annotations
 
 import base64
-import json
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
 
 # Chart rendering
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 
 from codereview.models import (
-    FileIssue,
     FileReview,
+    ReviewConclusion,
     ReviewResult,
     RiskLevel,
-    ReviewConclusion,
 )
-
 
 # Try to use a better font, fallback gracefully
 try:
-    plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica']
-    plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Helvetica"]
+    plt.rcParams["axes.unicode_minus"] = False
 except Exception:
     pass
 
@@ -141,20 +138,22 @@ class ReportGenerator:
             lines.append(f"**PR**: #{pr_number}")
 
         # Summary section
-        lines.extend([
-            "",
-            "## 📋 Summary",
-            "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
-            f"| Conclusion | {self._get_conclusion_emoji(result.conclusion)} {result.conclusion.value.replace('_', ' ').title()} |",
-            f"| Confidence | {result.confidence:.1f}% |",
-            f"| Files Reviewed | {len(result.files_reviewed)} |",
-            f"| Total Issues | {stats['total_issues']} |",
-            f"| 🔴 High Risk | {stats['high_risk']} |",
-            f"| 🟡 Medium Risk | {stats['medium_risk']} |",
-            f"| 🟢 Low Risk | {stats['low_risk']} |",
-        ])
+        lines.extend(
+            [
+                "",
+                "## 📋 Summary",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Conclusion | {self._get_conclusion_emoji(result.conclusion)} {result.conclusion.value.replace('_', ' ').title()} |",
+                f"| Confidence | {result.confidence:.1f}% |",
+                f"| Files Reviewed | {len(result.files_reviewed)} |",
+                f"| Total Issues | {stats['total_issues']} |",
+                f"| 🔴 High Risk | {stats['high_risk']} |",
+                f"| 🟡 Medium Risk | {stats['medium_risk']} |",
+                f"| 🟢 Low Risk | {stats['low_risk']} |",
+            ]
+        )
 
         # Issue breakdown by type
         issue_types = self._categorize_issues(result)
@@ -189,10 +188,10 @@ class ReportGenerator:
             lines.append("")
 
             for issue in file_review.issues:
-                marker = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
-                    issue.risk_level.value, ""
+                marker = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(issue.risk_level.value, "")
+                lines.append(
+                    f"- [{marker} **{issue.risk_level.value.upper()}**] {issue.description}"
                 )
-                lines.append(f"- [{marker} **{issue.risk_level.value.upper()}**] {issue.description}")
 
                 if issue.line_number:
                     lines[-1] += f" (Line {issue.line_number})"
@@ -210,7 +209,11 @@ class ReportGenerator:
             lines.append(f"**Historical Data Points**: {len(trend_data.dates)}")
             lines.append("")
             for i, date in enumerate(trend_data.dates[-5:]):  # Last 5 dates
-                issues = list(trend_data.issue_counts.values())[i] if i < len(trend_data.issue_counts) else 0
+                issues = (
+                    list(trend_data.issue_counts.values())[i]
+                    if i < len(trend_data.issue_counts)
+                    else 0
+                )
                 lines.append(f"- **{date}**: {issues} issues")
 
         return "\n".join(lines)
@@ -237,19 +240,19 @@ class ReportGenerator:
         # Helper function to extract reviewed_at safely
         def get_reviewed_at(item):
             if isinstance(item, dict):
-                return item.get('reviewed_at', datetime.now().isoformat())
-            return getattr(item, 'reviewed_at', datetime.now())
+                return item.get("reviewed_at", datetime.now().isoformat())
+            return getattr(item, "reviewed_at", datetime.now())
 
         # Helper function to get files_reviewed
         def get_files_reviewed(item):
             if isinstance(item, dict):
-                return item.get('files_reviewed', [])
+                return item.get("files_reviewed", [])
             return item.files_reviewed
 
         # Helper function to get confidence
         def get_confidence(item):
             if isinstance(item, dict):
-                return item.get('confidence', 0)
+                return item.get("confidence", 0)
             return item.confidence
 
         sorted_data = sorted(data, key=get_reviewed_at)
@@ -259,7 +262,7 @@ class ReportGenerator:
             review_date = get_reviewed_at(result)
             if isinstance(review_date, str):
                 try:
-                    review_date = datetime.fromisoformat(review_date.replace('Z', '+00:00'))
+                    review_date = datetime.fromisoformat(review_date.replace("Z", "+00:00"))
                 except ValueError:
                     review_date = datetime.now()
 
@@ -271,15 +274,18 @@ class ReportGenerator:
                 key = review_date.strftime("%Y-%m")
 
             files_reviewed = get_files_reviewed(result)
-            period_data[key]["issues"] += sum(len(fr.get('issues', []) if isinstance(fr, dict) else fr.issues) for fr in files_reviewed)
+            period_data[key]["issues"] += sum(
+                len(fr.get("issues", []) if isinstance(fr, dict) else fr.issues)
+                for fr in files_reviewed
+            )
             period_data[key]["confidence"].append(get_confidence(result))
             period_data[key]["files"] += len(files_reviewed)
 
             # Track risk levels
             for fr in files_reviewed:
                 if isinstance(fr, dict):
-                    risk_level = fr.get('risk_level', RiskLevel.LOW)
-                    file_path = fr.get('file_path', '')
+                    risk_level = fr.get("risk_level", RiskLevel.LOW)
+                    file_path = fr.get("file_path", "")
                 else:
                     risk_level = fr.risk_level
                     file_path = fr.file_path
@@ -354,16 +360,22 @@ class ReportGenerator:
 
         # Count issues by risk level (more intuitive than counting files)
         high_risk = sum(
-            1 for fr in result.files_reviewed
-            for issue in fr.issues if issue.risk_level == RiskLevel.HIGH
+            1
+            for fr in result.files_reviewed
+            for issue in fr.issues
+            if issue.risk_level == RiskLevel.HIGH
         )
         medium_risk = sum(
-            1 for fr in result.files_reviewed
-            for issue in fr.issues if issue.risk_level == RiskLevel.MEDIUM
+            1
+            for fr in result.files_reviewed
+            for issue in fr.issues
+            if issue.risk_level == RiskLevel.MEDIUM
         )
         low_risk = sum(
-            1 for fr in result.files_reviewed
-            for issue in fr.issues if issue.risk_level == RiskLevel.LOW
+            1
+            for fr in result.files_reviewed
+            for issue in fr.issues
+            if issue.risk_level == RiskLevel.LOW
         )
 
         return {
@@ -379,7 +391,15 @@ class ReportGenerator:
         categories: dict[str, int] = defaultdict(int)
 
         keywords = {
-            "Security": ["password", "secret", "token", "key", "auth", "credential", "vulnerability"],
+            "Security": [
+                "password",
+                "secret",
+                "token",
+                "key",
+                "auth",
+                "credential",
+                "vulnerability",
+            ],
             "Performance": ["performance", "slow", "memory", "cache", "optimize", "efficient"],
             "Code Quality": ["code quality", "complex", "duplicate", "refactor", "cleanup"],
             "Error Handling": ["error", "exception", "handling", "null", "undefined"],
@@ -414,33 +434,31 @@ class ReportGenerator:
         """Generate pie chart for issue distribution."""
         stats = self._calculate_stats(result)
 
-        if stats['total_issues'] == 0:
+        if stats["total_issues"] == 0:
             return ""
 
-        sizes = [stats['high_risk'], stats['medium_risk'], stats['low_risk']]
-        labels = ['High Risk', 'Medium Risk', 'Low Risk']
-        colors = ['#ff6b6b', '#ffd93d', '#6bcb77']
+        sizes = [stats["high_risk"], stats["medium_risk"], stats["low_risk"]]
+        labels = ["High Risk", "Medium Risk", "Low Risk"]
+        colors = ["#ff6b6b", "#ffd93d", "#6bcb77"]
 
         # Filter out zero values
-        non_zero = [(l, s, c) for l, s, c in zip(labels, sizes, colors) if s > 0]
+        non_zero = [
+            (label, size, color) for label, size, color in zip(labels, sizes, colors) if size > 0
+        ]
         if not non_zero:
             return ""
 
         labels, sizes, colors = zip(*non_zero)
 
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-        ax.set_title('Issues by Risk Level')
+        ax.pie(sizes, labels=labels, colors=colors, autopct="%1.1f%%", startangle=90)
+        ax.set_title("Issues by Risk Level")
 
         return self._fig_to_base64(fig)
 
     def _generate_bar_chart_base64(self, result: ReviewResult) -> str:
         """Generate bar chart for files with issues."""
-        file_issues = [
-            (fr.file_path, len(fr.issues))
-            for fr in result.files_reviewed
-            if fr.issues
-        ]
+        file_issues = [(fr.file_path, len(fr.issues)) for fr in result.files_reviewed if fr.issues]
 
         if not file_issues:
             return ""
@@ -456,22 +474,29 @@ class ReportGenerator:
         colors = []
         for f, _ in file_issues:
             risk = file_risks.get(f, RiskLevel.LOW)
-            colors.append({
-                RiskLevel.HIGH: '#ff6b6b',
-                RiskLevel.MEDIUM: '#ffd93d',
-                RiskLevel.LOW: '#6bcb77',
-            }.get(risk, '#cccccc'))
+            colors.append(
+                {
+                    RiskLevel.HIGH: "#ff6b6b",
+                    RiskLevel.MEDIUM: "#ffd93d",
+                    RiskLevel.LOW: "#6bcb77",
+                }.get(risk, "#cccccc")
+            )
 
         fig, ax = plt.subplots(figsize=(10, 5))
         bars = ax.barh(files, counts, color=colors)
-        ax.set_xlabel('Number of Issues')
-        ax.set_title('Issues per File')
+        ax.set_xlabel("Number of Issues")
+        ax.set_title("Issues per File")
         ax.invert_yaxis()
 
         # Add value labels
         for bar, count in zip(bars, counts):
-            ax.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height()/2,
-                   str(count), va='center', fontsize=9)
+            ax.text(
+                bar.get_width() + 0.1,
+                bar.get_y() + bar.get_height() / 2,
+                str(count),
+                va="center",
+                fontsize=9,
+            )
 
         plt.tight_layout()
         return self._fig_to_base64(fig)
@@ -481,25 +506,25 @@ class ReportGenerator:
         fig, ax = plt.subplots(figsize=(6, 3))
 
         # Create a simple horizontal bar gauge
-        bar_color = '#6bcb77' if confidence >= 80 else '#ffd93d' if confidence >= 60 else '#ff6b6b'
+        bar_color = "#6bcb77" if confidence >= 80 else "#ffd93d" if confidence >= 60 else "#ff6b6b"
 
-        ax.barh([0], [100], color='#f0f0f0', height=0.5)
+        ax.barh([0], [100], color="#f0f0f0", height=0.5)
         ax.barh([0], [confidence], color=bar_color, height=0.5)
 
         ax.set_xlim(0, 100)
         ax.set_ylim(-0.5, 0.5)
         ax.set_yticks([])
-        ax.set_xlabel(f'Confidence: {confidence:.0f}%', fontsize=12, fontweight='bold')
+        ax.set_xlabel(f"Confidence: {confidence:.0f}%", fontsize=12, fontweight="bold")
 
         # Add threshold markers
-        for threshold, label in [(60, '60%'), (80, '80%')]:
-            ax.axvline(x=threshold, color='#999999', linestyle='--', alpha=0.5)
-            ax.text(threshold, 0.4, label, ha='center', fontsize=8, color='#666666')
+        for threshold, label in [(60, "60%"), (80, "80%")]:
+            ax.axvline(x=threshold, color="#999999", linestyle="--", alpha=0.5)
+            ax.text(threshold, 0.4, label, ha="center", fontsize=8, color="#666666")
 
-        ax.set_title('Confidence Score', pad=10)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_visible(False)
+        ax.set_title("Confidence Score", pad=10)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_visible(False)
 
         return self._fig_to_base64(fig)
 
@@ -512,21 +537,19 @@ class ReportGenerator:
 
         # Issue trend
         issue_values = list(trend.issue_counts.values())
-        ax1.plot(trend.dates, issue_values, marker='o', color='#ff6b6b', linewidth=2)
-        ax1.fill_between(trend.dates, issue_values, alpha=0.3, color='#ff6b6b')
-        ax1.set_ylabel('Total Issues')
-        ax1.set_title('Issue Trend Over Time')
+        ax1.plot(trend.dates, issue_values, marker="o", color="#ff6b6b", linewidth=2)
+        ax1.fill_between(trend.dates, issue_values, alpha=0.3, color="#ff6b6b")
+        ax1.set_ylabel("Total Issues")
+        ax1.set_title("Issue Trend Over Time")
         ax1.grid(True, alpha=0.3)
 
         # Confidence trend
         if trend.confidence_values:
-            ax2.plot(trend.dates, trend.confidence_values, marker='s',
-                    color='#6bcb77', linewidth=2)
-            ax2.fill_between(trend.dates, trend.confidence_values, alpha=0.3,
-                           color='#6bcb77')
-            ax2.set_ylabel('Confidence %')
-            ax2.set_xlabel('Time Period')
-            ax2.set_title('Confidence Trend')
+            ax2.plot(trend.dates, trend.confidence_values, marker="s", color="#6bcb77", linewidth=2)
+            ax2.fill_between(trend.dates, trend.confidence_values, alpha=0.3, color="#6bcb77")
+            ax2.set_ylabel("Confidence %")
+            ax2.set_xlabel("Time Period")
+            ax2.set_title("Confidence Trend")
             ax2.set_ylim(0, 100)
             ax2.grid(True, alpha=0.3)
 
@@ -536,9 +559,9 @@ class ReportGenerator:
     def _fig_to_base64(self, fig) -> str:
         """Convert matplotlib figure to base64 string."""
         buf = BytesIO()
-        fig.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+        fig.savefig(buf, format="png", bbox_inches="tight", dpi=100)
         buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        img_base64 = base64.b64encode(buf.read()).decode("utf-8")
         plt.close(fig)
         return img_base64
 
@@ -553,7 +576,7 @@ class ReportGenerator:
         trend_chart: str,
     ) -> str:
         """Build complete HTML report."""
-        conclusion = result.conclusion.value.replace('_', ' ').title()
+        conclusion = result.conclusion.value.replace("_", " ").title()
         conclusion_emoji = self._get_conclusion_emoji(result.conclusion)
 
         html = f"""<!DOCTYPE html>
@@ -851,30 +874,30 @@ class ReportGenerator:
                 <strong>{self.project_name}</strong>
                 {" | PR #" + str(pr_number) if pr_number else ""}
                 <br>
-                Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             </div>
         </div>
 
         <!-- Summary Stats -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="value">{stats['total_issues']}</div>
+                <div class="value">{stats["total_issues"]}</div>
                 <div class="label">Total Issues</div>
             </div>
             <div class="stat-card high">
-                <div class="value">{stats['high_risk']}</div>
+                <div class="value">{stats["high_risk"]}</div>
                 <div class="label">🔴 High Risk</div>
             </div>
             <div class="stat-card medium">
-                <div class="value">{stats['medium_risk']}</div>
+                <div class="value">{stats["medium_risk"]}</div>
                 <div class="label">🟡 Medium Risk</div>
             </div>
             <div class="stat-card low">
-                <div class="value">{stats['low_risk']}</div>
+                <div class="value">{stats["low_risk"]}</div>
                 <div class="label">🟢 Low Risk</div>
             </div>
             <div class="stat-card">
-                <div class="value">{stats['total_files']}</div>
+                <div class="value">{stats["total_files"]}</div>
                 <div class="label">Files Reviewed</div>
             </div>
         </div>
@@ -892,21 +915,29 @@ class ReportGenerator:
         <div class="card">
             <h2>📈 Visualizations</h2>
             <div class="charts-grid">
-                {self._render_chart_container('Risk Distribution', pie_chart) if pie_chart else ''}
-                {self._render_chart_container('Issues per File', bar_chart) if bar_chart else ''}
-                {self._render_chart_container('Confidence Score', confidence_chart) if confidence_chart else ''}
+                {self._render_chart_container("Risk Distribution", pie_chart) if pie_chart else ""}
+                {self._render_chart_container("Issues per File", bar_chart) if bar_chart else ""}
+                {
+            self._render_chart_container("Confidence Score", confidence_chart)
+            if confidence_chart
+            else ""
+        }
             </div>
         </div>
 
         <!-- Trend Chart -->
-        {f'''
+        {
+            f'''
         <div class="card">
             <h2>📉 Trend Analysis</h2>
             <div class="chart-container">
                 <img src="data:image/png;base64,{trend_chart}" alt="Trend Analysis">
             </div>
         </div>
-        ''' if trend_chart else ''}
+        '''
+            if trend_chart
+            else ""
+        }
 
         <!-- Files Reviewed -->
         <div class="card">
@@ -921,7 +952,7 @@ class ReportGenerator:
                     </tr>
                 </thead>
                 <tbody>
-                    {''.join(self._render_file_row(fr) for fr in result.files_reviewed)}
+                    {"".join(self._render_file_row(fr) for fr in result.files_reviewed)}
                 </tbody>
             </table>
         </div>
@@ -1017,7 +1048,7 @@ class ReportGenerator:
                     📄 {file_path}
                     {" | Line " + str(issue.line_number) if issue.line_number else ""}
                 </div>
-                {f'<div class="issue-suggestion">💡 {issue.suggestion}</div>' if issue.suggestion else ''}
+                {f'<div class="issue-suggestion">💡 {issue.suggestion}</div>' if issue.suggestion else ""}
             </div>
             """)
 

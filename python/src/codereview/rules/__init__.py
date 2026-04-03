@@ -79,7 +79,7 @@ class RuleEngine:
         self.rules_dir = rules_dir or self.DEFAULT_RULES_DIR
         self.rules: list[DetectionRule] = []
         self._load_rules()
-        
+
         if custom_rules:
             self._load_custom_rules(custom_rules)
 
@@ -92,7 +92,7 @@ class RuleEngine:
         # Load YAML rules
         for rule_file in self.rules_dir.glob("*.yaml"):
             self._load_yaml_rules(rule_file)
-        
+
         for rule_file in self.rules_dir.glob("*.json"):
             self._load_json_rules(rule_file)
 
@@ -171,9 +171,7 @@ class RuleEngine:
 
         return issues
 
-    def detect_in_diff(
-        self, diff_content: str, language: Optional[str] = None
-    ) -> list[dict]:
+    def detect_in_diff(self, diff_content: str, language: Optional[str] = None) -> list[dict]:
         """Detect risks in diff content.
 
         Args:
@@ -223,6 +221,35 @@ class RuleEngine:
                 return rule
         return None
 
+    def disable_rules(self, ids: list[str]) -> list[str]:
+        """Disable rules by their IDs.
+
+        Args:
+            ids: List of rule IDs to disable
+
+        Returns:
+            List of actually disabled rule IDs (excludes invalid IDs)
+        """
+        disabled = []
+        invalid_ids = []
+
+        for rule_id in ids:
+            for i, rule in enumerate(self.rules):
+                if rule.id == rule_id:
+                    self.rules.pop(i)
+                    disabled.append(rule_id)
+                    break
+            else:
+                invalid_ids.append(rule_id)
+
+        for invalid_id in invalid_ids:
+            logger.warning(f"Rule not found or already disabled: {invalid_id}")
+
+        if disabled:
+            logger.info(f"Disabled {len(disabled)} rule(s): {disabled}")
+
+        return disabled
+
 
 def create_rule_engine(
     rules_dir: Optional[Path] = None, custom_rules: Optional[list] = None
@@ -237,3 +264,26 @@ def create_rule_engine(
         Configured RuleEngine instance
     """
     return RuleEngine(rules_dir=rules_dir, custom_rules=custom_rules)
+
+
+def get_all_rules() -> list[DetectionRule]:
+    """Get all loaded detection rules.
+
+    Returns:
+        List of all DetectionRule instances
+    """
+    engine = RuleEngine()
+    return engine.rules
+
+
+def disable_rules(ids: list[str]) -> list[str]:
+    """Disable rules by their IDs.
+
+    Args:
+        ids: List of rule IDs to disable
+
+    Returns:
+        List of actually disabled rule IDs (excludes invalid IDs)
+    """
+    engine = RuleEngine()
+    return engine.disable_rules(ids)

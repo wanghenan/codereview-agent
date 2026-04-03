@@ -10,7 +10,6 @@ This module provides Ruby-specific code health checks including:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 from .. import (
     BaseLanguageAnalyzer,
@@ -18,7 +17,6 @@ from .. import (
     LanguageIssue,
     register_analyzer,
 )
-
 
 # Ruby-specific detection rules
 RUBY_RULES = [

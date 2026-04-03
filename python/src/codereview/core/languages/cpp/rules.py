@@ -49,7 +49,7 @@ CPP_LANGUAGE_RULES: list[dict[str, Any]] = [
         "pattern": r"printf\s*\(\s*\w+\s*[,)]",
         "severity": "high",
         "description": "Format string vulnerability",
-        "suggestion": "Use printf(\"%s\", str)",
+        "suggestion": 'Use printf("%s", str)',
     },
     {
         "id": "CPP-RULE-007",

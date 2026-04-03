@@ -11,15 +11,15 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 from codereview.models import (
-    AutoMergeConfig,
     AutoMergeConditions,
+    AutoMergeConfig,
     ReviewConclusion,
     ReviewResult,
     RiskLevel,
 )
 
 if TYPE_CHECKING:
-    from codereview.core.github_client import GitHubClient, MergeMethod, PullRequest
+    from codereview.core.github_client import GitHubClient
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class AutoMerger:
     def __init__(
         self,
         config: AutoMergeConfig,
-        github_client: Optional["GitHubClient"] = None,
+        github_client: Optional[GitHubClient] = None,
         conditions_override: Optional[AutoMergeConditions] = None,
     ):
         """Initialize auto merger.
@@ -166,7 +166,8 @@ class AutoMerger:
         # Check CI check runs if provided
         if check_run_status:
             failed_checks = [
-                check for check in check_run_status
+                check
+                for check in check_run_status
                 if check.get("conclusion") in ("failure", "timed_out", "cancelled")
             ]
             if failed_checks:
@@ -180,8 +181,7 @@ class AutoMerger:
                 logger.info("High confidence + low risk only, proceeding despite needs_review")
             else:
                 return False, (
-                    f"Review conclusion is {review_result.conclusion.value}, "
-                    f"expected can_submit"
+                    f"Review conclusion is {review_result.conclusion.value}, expected can_submit"
                 )
 
         return True, "All merge conditions met"
@@ -429,7 +429,7 @@ class AutoMerger:
             Commit message string
         """
         lines = [
-            f"Auto-merged by CodeReview Agent",
+            "Auto-merged by CodeReview Agent",
             "",
             f"Confidence: {original_result.confidence:.0f}%",
             f"Files reviewed: {len(original_result.files_reviewed)}",
@@ -443,17 +443,20 @@ class AutoMerger:
 
         # Count issues by severity
         high = sum(
-            1 for f in filtered_result.files_reviewed
+            1
+            for f in filtered_result.files_reviewed
             for i in f.issues
             if i.risk_level == RiskLevel.HIGH
         )
         medium = sum(
-            1 for f in filtered_result.files_reviewed
+            1
+            for f in filtered_result.files_reviewed
             for i in f.issues
             if i.risk_level == RiskLevel.MEDIUM
         )
         low = sum(
-            1 for f in filtered_result.files_reviewed
+            1
+            for f in filtered_result.files_reviewed
             for i in f.issues
             if i.risk_level == RiskLevel.LOW
         )
@@ -552,19 +555,21 @@ class AutoMerger:
         # Build file summary
         file_summary = []
         for f in filtered_result.files_reviewed:
-            file_summary.append({
-                "file_path": f.file_path,
-                "risk_level": f.risk_level.value,
-                "issue_count": len(f.issues),
-                "issues": [
-                    {
-                        "line": i.line_number,
-                        "level": i.risk_level.value,
-                        "description": i.description[:80],  # Truncate for preview
-                    }
-                    for i in f.issues
-                ],
-            })
+            file_summary.append(
+                {
+                    "file_path": f.file_path,
+                    "risk_level": f.risk_level.value,
+                    "issue_count": len(f.issues),
+                    "issues": [
+                        {
+                            "line": i.line_number,
+                            "level": i.risk_level.value,
+                            "description": i.description[:80],  # Truncate for preview
+                        }
+                        for i in f.issues
+                    ],
+                }
+            )
 
         return {
             "enabled": self.is_enabled,
@@ -587,11 +592,11 @@ class AutoMerger:
                 "approval_count": approval_count,
                 "check_runs_total": len(check_runs),
                 "check_runs_passed": sum(
-                    1 for c in check_runs
-                    if c.get("conclusion") in ("success", "completed")
+                    1 for c in check_runs if c.get("conclusion") in ("success", "completed")
                 ),
                 "check_runs_failed": sum(
-                    1 for c in check_runs
+                    1
+                    for c in check_runs
                     if c.get("conclusion") in ("failure", "timed_out", "cancelled")
                 ),
             },
@@ -602,7 +607,7 @@ class AutoMerger:
 
 def create_auto_merger(
     config: AutoMergeConfig,
-    github_client: Optional["GitHubClient"] = None,
+    github_client: Optional[GitHubClient] = None,
 ) -> AutoMerger:
     """Create an AutoMerger instance.
 

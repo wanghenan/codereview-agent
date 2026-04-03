@@ -11,7 +11,6 @@ This module provides C++-specific code health checks including:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 from .. import (
     BaseLanguageAnalyzer,
@@ -19,7 +18,6 @@ from .. import (
     LanguageIssue,
     register_analyzer,
 )
-
 
 # C++-specific detection rules
 CPP_RULES = [
@@ -138,7 +136,7 @@ CPP_RULES = [
         "pattern": r"printf\s*\(\s*\w+\s*[,)]",
         "severity": "high",
         "description": "Potential format string vulnerability",
-        "suggestion": "Use printf(\"%s\", str) instead of printf(str)",
+        "suggestion": 'Use printf("%s", str) instead of printf(str)',
     },
     {
         "id": "CPP-015",

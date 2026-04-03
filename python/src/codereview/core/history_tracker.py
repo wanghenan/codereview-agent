@@ -6,8 +6,8 @@ import csv
 import json
 import logging
 import sqlite3
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -268,7 +268,7 @@ class HistoryTracker:
         cursor = conn.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 timestamp, repo_name,
                 COUNT(*) as review_count,
                 SUM(total_issues) as total_issues,
@@ -308,7 +308,9 @@ class HistoryTracker:
         previous_issues = 0
 
         for i, row in enumerate(rows):
-            period_str = row[1] if period == "repo" else (row[0][:7] if period == "month" else row[0][:10])
+            period_str = (
+                row[1] if period == "repo" else (row[0][:7] if period == "month" else row[0][:10])
+            )
             review_count = row[2]
             total_issues = row[3] or 0
             avg_confidence = row[4] or 0.0
@@ -371,7 +373,9 @@ class HistoryTracker:
             "confidence_change": current.confidence - previous.confidence,
         }
 
-    def export_json(self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None) -> int:
+    def export_json(
+        self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None
+    ) -> int:
         """Export review history to JSON.
 
         Args:
@@ -412,7 +416,9 @@ class HistoryTracker:
         logger.info(f"Exported {len(data)} records to {filepath}")
         return len(data)
 
-    def export_csv(self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None) -> int:
+    def export_csv(
+        self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None
+    ) -> int:
         """Export review history to CSV.
 
         Args:
@@ -479,7 +485,7 @@ class HistoryTracker:
         cursor = conn.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 COUNT(*) as total_reviews,
                 SUM(total_issues) as total_issues,
                 AVG(confidence) as avg_confidence,

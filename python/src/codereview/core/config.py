@@ -11,17 +11,22 @@ from pydantic import ValidationError
 
 from codereview.models import (
     Config,
-    ConfigCache,
-    ConfigLLM,
     LLMProvider,
-    OutputConfig,
 )
 
 
 class ConfigError(Exception):
     """Configuration error."""
 
-    pass
+    def __init__(self, message: str, field_name: Optional[str] = None):
+        """Initialize ConfigError.
+
+        Args:
+            message: Error message
+            field_name: Optional field name that caused the error
+        """
+        super().__init__(message)
+        self.field_name = field_name
 
 
 class ConfigLoader:

@@ -10,7 +10,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -169,9 +169,11 @@ def register_analyzer(language: str) -> callable:
     Returns:
         Decorator function
     """
+
     def decorator(cls: type[BaseLanguageAnalyzer]) -> type[BaseLanguageAnalyzer]:
         _LANGUAGE_ANALYZERS[language] = cls
         return cls
+
     return decorator
 
 
@@ -188,6 +190,7 @@ def get_analyzer(language: str) -> Optional[BaseLanguageAnalyzer]:
         # Try to import the language module
         try:
             import importlib
+
             importlib.import_module(f"codereview.core.languages.{language}")
         except ImportError:
             pass
@@ -266,14 +269,14 @@ def analyze_file(
 
 
 # Import all language analyzers to register them
-from codereview.core.languages import (
-    go,
-    java,
-    rust,
-    cpp,
-    php,
-    ruby,
-    csharp,
+from codereview.core.languages import (  # noqa: F401,E402
+    cpp as cpp,
+    csharp as csharp,
+    go as go,
+    java as java,
+    php as php,
+    ruby as ruby,
+    rust as rust,
 )
 
 

@@ -78,7 +78,7 @@ class TestFixSuggestion:
         display = suggestion.to_display_string(1)
 
         assert "🔧 建议修复 #1: SQL injection risk" in display
-        assert "query = f\"SELECT * FROM users WHERE id = {user_id}\"" in display
+        assert 'query = f"SELECT * FROM users WHERE id = {user_id}"' in display
         assert "cursor.execute(query, (user_id,))" in display
         assert "风险等级: 🔴 high" in display
         assert "置信度: 95.0%" in display
@@ -229,7 +229,7 @@ class TestCodeFixer:
         mock_chain = MagicMock()
         mock_chain.ainvoke = AsyncMock(return_value=mock_llm_response)
 
-        with patch.object(fixer, '_build_fix_prompt', return_value=mock_chain):
+        with patch.object(fixer, "_build_fix_prompt", return_value=mock_chain):
             # Directly test the logic
             pass
 
@@ -326,6 +326,246 @@ class TestCodeFixerApplyFix:
         assert result.success is False
         assert "Could not find" in result.error
 
+    @pytest.mark.asyncio
+    async def test_apply_fix_multiline_match(self, fixer):
+        """Test applying fix with multiline code match."""
+        issue = FileIssue(
+            file_path="test.py",
+            line_number=10,
+            risk_level=RiskLevel.LOW,
+            description="Test issue",
+        )
+
+        suggestion = FixSuggestion(
+            issue=issue,
+            original_code="x = 1\ny = 2\nz = 3",
+            fixed_code="x = 10\ny = 20\nz = 30",
+            fix_type=FixType.BUG_FIX,
+            risk_level=RiskLevel.LOW,
+            confidence=90.0,
+            explanation="Multi-line fix",
+        )
+
+        content = "prefix\nx = 1\ny = 2\nz = 3\nsuffix"
+        result = await fixer.apply_fix(content, suggestion)
+
+        assert result.success is True
+        assert "x = 10" in result.fixed_code
+        assert "y = 20" in result.fixed_code
+        assert "z = 30" in result.fixed_code
+        assert "prefix" in result.fixed_code
+        assert "suffix" in result.fixed_code
+
+
+class TestFixPreview:
+    """Tests for fix preview formatting."""
+
+    @pytest.fixture
+    def mock_llm(self):
+        """Create a mock LLM."""
+        return MagicMock()
+
+    @pytest.fixture
+    def orchestrator(self, mock_llm):
+        """Create a FixOrchestrator instance."""
+        return FixOrchestrator(llm=mock_llm)
+
+    def test_fix_preview_shows_risk_emoji(self, orchestrator):
+        """Test that fix preview shows risk emojis."""
+        issue = FileIssue(
+            file_path="test.py",
+            line_number=10,
+            risk_level=RiskLevel.HIGH,
+            description="SQL injection vulnerability",
+        )
+
+        fixes = [
+            FixSuggestion(
+                issue=issue,
+                original_code="query = f'...'",
+                fixed_code="query = '...'",
+                fix_type=FixType.SECURITY,
+                risk_level=RiskLevel.HIGH,
+                confidence=95.0,
+                explanation="Fixed SQL injection",
+            )
+        ]
+
+        result = orchestrator.format_fixes_for_display(fixes)
+
+        assert "🔴" in result
+        assert "high" in result
+
+    def test_fix_preview_shows_confidence(self, orchestrator):
+        """Test that fix preview shows confidence scores."""
+        issue = FileIssue(
+            file_path="test.py",
+            line_number=10,
+            risk_level=RiskLevel.MEDIUM,
+            description="Performance issue",
+        )
+
+        fixes = [
+            FixSuggestion(
+                issue=issue,
+                original_code="for i in range(1000):\n    print(i)",
+                fixed_code="for i in range(1000):\n    pass",
+                fix_type=FixType.PERFORMANCE,
+                risk_level=RiskLevel.MEDIUM,
+                confidence=88.5,
+                explanation="Removed print statement",
+            )
+        ]
+
+        result = orchestrator.format_fixes_for_display(fixes)
+
+        assert "88.5%" in result
+
+    def test_fix_preview_shows_fix_type(self, orchestrator):
+        """Test that fix preview shows fix type."""
+        issue = FileIssue(
+            file_path="test.py",
+            line_number=10,
+            risk_level=RiskLevel.LOW,
+            description="Style issue",
+        )
+
+        fixes = [
+            FixSuggestion(
+                issue=issue,
+                original_code="x=1",
+                fixed_code="x = 1",
+                fix_type=FixType.CODE_STYLE,
+                risk_level=RiskLevel.LOW,
+                confidence=99.0,
+                explanation="Fixed formatting",
+            )
+        ]
+
+        result = orchestrator.format_fixes_for_display(fixes)
+
+        assert "code_style" in result
+
+
+class TestMultiFileFixBatch:
+    """Tests for multi-file fix batch processing."""
+
+    @pytest.fixture
+    def mock_llm(self):
+        """Create a mock LLM."""
+        return MagicMock()
+
+    @pytest.fixture
+    def orchestrator(self, mock_llm):
+        """Create a FixOrchestrator instance."""
+        return FixOrchestrator(llm=mock_llm)
+
+    @pytest.mark.asyncio
+    async def test_batch_process_handles_missing_file_content(self, orchestrator):
+        """Test batch processing handles missing file content gracefully."""
+        issues = [
+            FileIssue(
+                file_path="src/main.py",
+                line_number=10,
+                risk_level=RiskLevel.HIGH,
+                description="Security issue in main",
+            ),
+        ]
+
+        file_contents = {}  # No file contents provided
+
+        fixes = await orchestrator.generate_fixes(issues, file_contents)
+
+        # Should handle missing file content gracefully
+        assert len(fixes) == 0
+
+    @pytest.mark.asyncio
+    async def test_batch_apply_selected_fixes(self, orchestrator):
+        """Test applying multiple fixes to a file."""
+        issue1 = FileIssue(
+            file_path="test.py",
+            line_number=10,
+            risk_level=RiskLevel.LOW,
+            description="First issue",
+        )
+        issue2 = FileIssue(
+            file_path="test.py",
+            line_number=20,
+            risk_level=RiskLevel.LOW,
+            description="Second issue",
+        )
+
+        fixes = [
+            FixSuggestion(
+                issue=issue1,
+                original_code="x = 1",
+                fixed_code="x = 10",
+                fix_type=FixType.BUG_FIX,
+                risk_level=RiskLevel.LOW,
+                confidence=90.0,
+                explanation="First fix",
+            ),
+            FixSuggestion(
+                issue=issue2,
+                original_code="y = 2",
+                fixed_code="y = 20",
+                fix_type=FixType.BUG_FIX,
+                risk_level=RiskLevel.LOW,
+                confidence=90.0,
+                explanation="Second fix",
+            ),
+        ]
+
+        original_content = "x = 1\ny = 2\nz = 3"
+        result = await orchestrator.apply_selected_fixes(original_content, fixes)
+
+        assert "x = 10" in result
+        assert "y = 20" in result
+
+    def test_format_fixes_shows_issue_descriptions(self, orchestrator):
+        """Test that formatting shows issue descriptions."""
+        issues = [
+            FileIssue(
+                file_path="src/main.py",
+                line_number=10,
+                risk_level=RiskLevel.HIGH,
+                description="Issue in main",
+            ),
+            FileIssue(
+                file_path="lib/helper.py",
+                line_number=5,
+                risk_level=RiskLevel.LOW,
+                description="Issue in helper",
+            ),
+        ]
+
+        fixes = [
+            FixSuggestion(
+                issue=issues[0],
+                original_code="code1",
+                fixed_code="fixed1",
+                fix_type=FixType.SECURITY,
+                risk_level=RiskLevel.HIGH,
+                confidence=95.0,
+                explanation="Fixed",
+            ),
+            FixSuggestion(
+                issue=issues[1],
+                original_code="code2",
+                fixed_code="fixed2",
+                fix_type=FixType.CODE_STYLE,
+                risk_level=RiskLevel.LOW,
+                confidence=90.0,
+                explanation="Fixed",
+            ),
+        ]
+
+        result = orchestrator.format_fixes_for_display(fixes)
+
+        assert "Issue in main" in result
+        assert "Issue in helper" in result
+        assert "🔧 建议修复" in result
+
 
 class TestFixOrchestrator:
     """Tests for FixOrchestrator class."""
@@ -404,7 +644,7 @@ class TestIntegration:
         # Test display output
         display = suggestion.to_display_string(1)
         assert "🔧 建议修复 #1: Hardcoded API key" in display
-        assert "API_KEY = \"sk-1234567890\"" in display
+        assert 'API_KEY = "sk-1234567890"' in display
         assert 'os.environ.get("API_KEY")' in display
 
         # Test diff output

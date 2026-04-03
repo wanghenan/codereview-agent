@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from codereview.models import ReviewResult, OutputConfig
+from codereview.models import OutputConfig, ReviewResult
 
 
 class OutputGenerator:
@@ -53,8 +53,8 @@ class OutputGenerator:
         lines.extend(
             [
                 "",
-                f"## Conclusion",
-                f"",
+                "## Conclusion",
+                "",
                 f"**{emoji} {result.conclusion.value.replace('_', ' ').title()}** (Confidence: {result.confidence:.0f}%)",
                 "",
             ]

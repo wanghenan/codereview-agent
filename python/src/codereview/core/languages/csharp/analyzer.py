@@ -11,7 +11,6 @@ This module provides C#-specific code health checks including:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 from .. import (
     BaseLanguageAnalyzer,
@@ -19,7 +18,6 @@ from .. import (
     LanguageIssue,
     register_analyzer,
 )
-
 
 # C#-specific detection rules
 CSHARP_RULES = [

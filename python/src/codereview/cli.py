@@ -6,98 +6,131 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 from codereview.agents import ProjectAnalyzer, ReviewOrchestrator
 from codereview.core import CacheManager, ConfigLoader, LLMFactory
-from codereview.models import DiffEntry, ReviewResult
+from codereview.models import DiffEntry
 from codereview.output import OutputGenerator
 
 # Try to import rule engine
 try:
-    from codereview.rules import create_rule_engine
+    from codereview.rules import create_rule_engine, get_all_rules
+
     RULES_AVAILABLE = True
 except ImportError:
     RULES_AVAILABLE = False
     logging.warning("Rule engine not available")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
+
+CACHE_DIR = Path(".codereview-agent/cache")
+
+
+def get_version() -> str:
+    """Get the version of codereview-agent.
+
+    Returns:
+        Version string (X.Y.Z) or "0.0.0" if not found.
+    """
+    # Try importlib.metadata first (Python 3.8+)
+    try:
+        from importlib.metadata import version
+
+        return version("codereview-agent")
+    except Exception:
+        pass
+
+    # Fallback: read from pyproject.toml
+    try:
+        pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+        if pyproject_path.exists():
+            import re
+
+            content = pyproject_path.read_text(encoding="utf-8")
+            match = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+            if match:
+                return match.group(1)
+    except Exception:
+        pass
+
+    return "0.0.0"
 
 
 def get_git_diff(branch: str = "main", base_branch: str = None) -> str:
     """Get git diff for current branch vs target branch.
-    
+
     Args:
         branch: Target branch to compare against (default: main)
         base_branch: Optional base branch (overrides branch if provided)
-    
+
     Returns:
         Git diff output
     """
     try:
         # Determine the comparison base
         compare_branch = base_branch or branch
-        
+
         # Try to get diff against the specified branch
         result = subprocess.run(
             ["git", "diff", f"{compare_branch}...", "--", "."],
             capture_output=True,
             text=True,
-            cwd=Path.cwd()
+            cwd=Path.cwd(),
         )
-        
+
         if result.returncode != 0:
             # Fallback: try comparing with HEAD
             result = subprocess.run(
-                ["git", "diff", "HEAD", "--", "."],
-                capture_output=True,
-                text=True,
-                cwd=Path.cwd()
+                ["git", "diff", "HEAD", "--", "."], capture_output=True, text=True, cwd=Path.cwd()
             )
-        
+
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to get git diff: {result.stderr}")
+
         return result.stdout
     except Exception as e:
         logger.error(f"Failed to get git diff: {e}")
-        return ""
+        raise RuntimeError(f"Failed to get git diff: {e}") from e
 
 
 def parse_git_diff_to_entries(diff_output: str) -> list[DiffEntry]:
     """Parse git diff output into DiffEntry list.
-    
+
     Args:
         diff_output: Raw git diff output
-    
+
     Returns:
         List of DiffEntry objects
     """
     import re
-    
+
     entries = []
     current_file = None
     current_status = "modified"
     additions = 0
     deletions = 0
     patch_lines = []
-    
+
     for line in diff_output.split("\n"):
         # Detect new file
         if line.startswith("diff --git"):
             # Save previous file
             if current_file:
-                entries.append(DiffEntry(
-                    filename=current_file,
-                    status=current_status,
-                    additions=additions,
-                    deletions=deletions,
-                    patch="\n".join(patch_lines)
-                ))
-            
+                entries.append(
+                    DiffEntry(
+                        filename=current_file,
+                        status=current_status,
+                        additions=additions,
+                        deletions=deletions,
+                        patch="\n".join(patch_lines),
+                    )
+                )
+
             # Extract filename
             match = re.match(r"diff --git a/(.*) b/(.*)", line)
             if match:
@@ -106,51 +139,51 @@ def parse_git_diff_to_entries(diff_output: str) -> list[DiffEntry]:
             additions = 0
             deletions = 0
             patch_lines = [line]
-            
+
         elif line.startswith("new file"):
             current_status = "added"
             patch_lines.append(line)
-            
+
         elif line.startswith("deleted file"):
             current_status = "deleted"
             patch_lines.append(line)
-            
+
         elif line.startswith("index "):
             patch_lines.append(line)
-            
+
         elif line.startswith("@@"):
             # Extract stats from hunk header
             match = re.search(r"@@\+.*(\d+)(?:,(\d+))? -(\d+)(?:,(\d+))? @@", line)
             if match:
-                new_start = int(match.group(1))
                 new_count = int(match.group(2) or 1)
-                old_start = int(match.group(3))
                 old_count = int(match.group(4) or 1)
                 additions += new_count
                 deletions += old_count
             patch_lines.append(line)
-            
+
         elif line.startswith("+") and not line.startswith("+++"):
             additions += 1
             patch_lines.append(line)
-            
+
         elif line.startswith("-") and not line.startswith("---"):
             deletions += 1
             patch_lines.append(line)
-            
+
         elif line.startswith(" "):
             patch_lines.append(line)
-    
+
     # Save last file
     if current_file:
-        entries.append(DiffEntry(
-            filename=current_file,
-            status=current_status,
-            additions=additions,
-            deletions=deletions,
-            patch="\n".join(patch_lines)
-        ))
-    
+        entries.append(
+            DiffEntry(
+                filename=current_file,
+                status=current_status,
+                additions=additions,
+                deletions=deletions,
+                patch="\n".join(patch_lines),
+            )
+        )
+
     return entries
 
 
@@ -167,6 +200,7 @@ async def run_review(
     auto_merge: bool = False,
     github_token: str | None = None,
     merge_dry_run: bool = True,
+    disabled_rules: Optional[list[str]] = None,
 ) -> dict:
     """Run the code review process.
 
@@ -199,8 +233,7 @@ async def run_review(
 
     # Initialize cache manager
     cache_manager = CacheManager(
-        cache_ttl_days=config.cache.ttl_days,
-        enable_file_cache=not disable_cache
+        cache_ttl_days=config.cache.ttl_days, enable_file_cache=not disable_cache
     )
 
     # Get or analyze project context
@@ -217,7 +250,7 @@ async def run_review(
 
     # Parse diff input or get from git
     diff_entries = _parse_diff(diff_input)
-    
+
     # If no diff provided, try to get from git
     if not diff_entries and git_branch:
         logger.info(f"Getting diff from git branch: {git_branch}")
@@ -232,6 +265,12 @@ async def run_review(
         try:
             rules_path = Path(rules_dir) if rules_dir else None
             rule_engine = create_rule_engine(rules_dir=rules_path)
+
+            # Disable specified rules
+            if disabled_rules:
+                disabled = rule_engine.disable_rules(disabled_rules)
+                logger.info(f"Disabled {len(disabled)} rule(s): {disabled}")
+
             logger.info(f"Loaded {len(rule_engine.rules)} detection rules")
         except Exception as e:
             logger.warning(f"Failed to load rules: {e}")
@@ -240,11 +279,7 @@ async def run_review(
     file_cache = cache_manager.file_cache if not disable_cache else None
 
     # Run review
-    orchestrator = ReviewOrchestrator(
-        config, llm, 
-        rule_engine=rule_engine,
-        file_cache=file_cache
-    )
+    orchestrator = ReviewOrchestrator(config, llm, rule_engine=rule_engine, file_cache=file_cache)
     result = await orchestrator.run_review(diff_entries, project_context)
 
     # Add cache info
@@ -264,7 +299,7 @@ async def run_review(
     if output_only:
         # Don't save files
         output_config.report_path = ""
-    
+
     # Override output path if specified
     if output_path:
         output_config.report_path = output_path
@@ -359,8 +394,8 @@ def _parse_diff(diff_input: str | None) -> list[DiffEntry]:
             return [DiffEntry(**entry) for entry in data]
         elif isinstance(data, dict) and "files" in data:
             return [DiffEntry(**entry) for entry in data["files"]]
-    except json.JSONDecodeError as e:
-        logger.debug(f"Failed to parse as inline JSON: {e}")
+    except json.JSONDecodeError:
+        logger.warning(f"Failed to parse diff JSON: {diff_input[:100]}...")
 
     # If it's a path, try to read file
     path = Path(diff_input)
@@ -373,9 +408,52 @@ def _parse_diff(diff_input: str | None) -> list[DiffEntry]:
         except Exception as e:
             logger.error(f"Error reading diff file {path}: {e}")
     else:
-        logger.warning(f"Diff input is not valid JSON and file does not exist: {diff_input[:100]}...")
+        logger.warning(
+            f"Diff input is not valid JSON and file does not exist: {diff_input[:100]}..."
+        )
 
     return []
+
+
+def _print_rules(json_output: bool = False) -> None:
+    """Print all available detection rules.
+
+    Args:
+        json_output: If True, output as JSON array. Otherwise, output as table.
+    """
+    if not RULES_AVAILABLE:
+        print("Rule engine not available", file=sys.stderr)
+        return
+
+    rules = get_all_rules()
+
+    if json_output:
+        rules_data = [
+            {
+                "id": r.id,
+                "name": r.name,
+                "severity": r.severity,
+                "description": r.description,
+                "language": r.language,
+            }
+            for r in rules
+        ]
+        print(json.dumps(rules_data, indent=2))
+    else:
+        print(f"\n{'=' * 80}")
+        print(f"  CodeReview Agent - Available Detection Rules ({len(rules)} rules)")
+        print(f"{'=' * 80}\n")
+
+        print(f"{'ID':<20} {'Name':<35} {'Severity':<10} {'Language'}")
+        print("-" * 80)
+
+        for rule in rules:
+            lang = rule.language or "all"
+            print(f"{rule.id:<20} {rule.name:<35} {rule.severity:<10} {lang}")
+
+        print(f"\n{'=' * 80}")
+        print(f"Total: {len(rules)} rules")
+        print(f"{'=' * 80}\n")
 
 
 def main():
@@ -398,43 +476,153 @@ def main():
 
     # New arguments for enhanced CLI experience
     parser.add_argument(
-        "--output", "-o", type=str, 
-        help="Output path for report (overrides config)"
+        "--output", "-o", type=str, help="Output path for report (overrides config)"
     )
-    
+
     parser.add_argument(
-        "--branch", "-b", type=str, 
-        help="Git branch to compare against (e.g., main, develop)"
+        "--branch", "-b", type=str, help="Git branch to compare against (e.g., main, develop)"
     )
-    
+
     parser.add_argument(
-        "--base-branch", type=str,
-        help="Base branch for comparison (overrides --branch)"
+        "--base-branch", type=str, help="Base branch for comparison (overrides --branch)"
     )
-    
+
     parser.add_argument(
-        "--rules-dir", type=str,
-        help="Custom rules directory (default: built-in rules)"
+        "--rules-dir", type=str, help="Custom rules directory (default: built-in rules)"
     )
-    
-    parser.add_argument(
-        "--no-cache", action="store_true",
-        help="Disable file-level review caching"
-    )
-    
+
+    parser.add_argument("--no-cache", action="store_true", help="Disable file-level review caching")
+
     # Auto-merge arguments
     parser.add_argument(
         "--auto-merge",
         action="store_true",
-        help="Automatically merge PR if conditions are met (requires --pr)"
+        help="Automatically merge PR if conditions are met (requires --pr)",
     )
-    
+
     parser.add_argument(
-        "--token", "-t", type=str,
-        help="GitHub token (or set GITHUB_TOKEN env var)"
+        "--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN env var)"
+    )
+
+    # Version flag
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Show version number and exit",
+    )
+
+    # Clear cache flag
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear the cache directory (.codereview-agent/cache/)",
+    )
+
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompt for --clear-cache",
+    )
+
+    parser.add_argument(
+        "--list-rules",
+        action="store_true",
+        help="List all available detection rules and exit",
+    )
+
+    parser.add_argument(
+        "--disable-rule",
+        action="append",
+        default=[],
+        help="Rule ID to disable (can be specified multiple times or comma-separated)",
+    )
+
+    # Logging control arguments
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose (DEBUG) logging",
+    )
+
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Enable quiet mode - only show ERROR messages",
+    )
+
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set logging level (overrides --verbose and --quiet)",
     )
 
     args = parser.parse_args()
+
+    # Configure logging based on flags
+    # Priority: quiet > verbose > log_level > default
+    if args.quiet:
+        log_level = logging.ERROR
+    elif args.verbose:
+        log_level = logging.DEBUG
+    elif args.log_level:
+        log_level = getattr(logging, args.log_level.upper())
+    else:
+        log_level = logging.INFO
+
+    # In --json mode, route logs to stderr to keep stdout clean
+    if args.json:
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            stream=sys.stderr,
+        )
+    else:
+        logging.basicConfig(
+            level=log_level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
+
+    # Handle --version first (short-circuit)
+    if args.version:
+        version = get_version()
+        print(f"codereview-agent {version}")
+        return 0
+
+    # Handle --list-rules (short-circuit)
+    if args.list_rules:
+        _print_rules(args.json)
+        return 0
+
+    # Handle --clear-cache
+    if args.clear_cache:
+        cache_dir = CACHE_DIR
+        if cache_dir.exists():
+            if args.yes or not sys.stdout.isatty():
+                shutil.rmtree(cache_dir)
+                print(f"Cache directory {cache_dir} has been cleared.")
+                return 0
+            else:
+                response = input(f"Clear cache directory {cache_dir}? [y/N]: ").strip().lower()
+                if response in ("y", "yes"):
+                    shutil.rmtree(cache_dir)
+                    print(f"Cache directory {cache_dir} has been cleared.")
+                    return 0
+                else:
+                    print("Cache clear cancelled.")
+                    return 0
+        else:
+            print(f"Cache directory {cache_dir} does not exist (nothing to clear).")
+            return 0
+
+    # Flatten --disable-rule arguments (can be comma-separated)
+    disabled_rules = []
+    for rule_arg in args.disable_rule:
+        if "," in rule_arg:
+            disabled_rules.extend(rule_arg.split(","))
+        else:
+            disabled_rules.append(rule_arg)
 
     # Run async
     try:
@@ -452,6 +640,7 @@ def main():
                 auto_merge=args.auto_merge,
                 github_token=args.token,
                 merge_dry_run=True,  # Always dry-run for now, --apply-auto-merge for non-dry
+                disabled_rules=disabled_rules,
             )
         )
 
@@ -464,15 +653,15 @@ def main():
 
             # Print report path if saved
             if "markdown" in result.get("outputs", {}):
-                print(f"\n📄 Full report generated.")
+                print("\n📄 Full report generated.")
 
             # Print merge info if auto-merge was requested
             if args.auto_merge and "merge" in result:
                 merge_result = result["merge"]
-                print(f"\n{'='*50}")
-                print(f"  Auto-Merge Preview")
-                print(f"{'='*50}")
-                
+                print(f"\n{'=' * 50}")
+                print("  Auto-Merge Preview")
+                print(f"{'=' * 50}")
+
                 if "error" in merge_result:
                     print(f"❌ {merge_result['error']}")
                 elif merge_result.get("dry_run"):
@@ -481,14 +670,22 @@ def main():
                     emoji = "✅" if can_merge else "❌"
                     print(f"\n{emoji} Can Merge: {can_merge}")
                     print(f"Reason: {preview.get('reason', 'Unknown')}")
-                    print(f"\n📊 Review Confidence: {preview.get('review', {}).get('confidence', 0):.0f}%")
-                    print(f"   Required: {preview.get('merge_requirements', {}).get('min_confidence', 0):.0f}%")
-                    print(f"\n👥 Approvals: {preview.get('current_status', {}).get('approval_count', 0)}")
+                    print(
+                        f"\n📊 Review Confidence: {preview.get('review', {}).get('confidence', 0):.0f}%"
+                    )
+                    print(
+                        f"   Required: {preview.get('merge_requirements', {}).get('min_confidence', 0):.0f}%"
+                    )
+                    print(
+                        f"\n👥 Approvals: {preview.get('current_status', {}).get('approval_count', 0)}"
+                    )
                     print(f"\n📁 Files ({preview.get('review', {}).get('filtered_files', 0)}):")
                     for f in preview.get("files", [])[:5]:
-                        risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(f.get("risk_level", ""), "⚪")
+                        risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
+                            f.get("risk_level", ""), "⚪"
+                        )
                         print(f"  {risk_emoji} {f['file_path']} ({f.get('issue_count', 0)} issues)")
-                    if preview.get("files", []) > 5:
+                    if len(preview.get("files", [])) > 5:
                         print(f"  ... and {len(preview.get('files', [])) - 5} more files")
                 else:
                     if merge_result.get("success"):
@@ -518,6 +715,7 @@ async def run_fix(
     min_risk: str = "high",
     json: bool = False,
     output_path: str | None = None,
+    interactive: bool = False,
 ) -> dict:
     """Generate and optionally apply fixes for code issues.
 
@@ -536,7 +734,7 @@ async def run_fix(
     Returns:
         Dict with fix results
     """
-    from codereview.core.fixer import CodeFixer, FixOrchestrator, FixSuggestion
+    from codereview.core.fixer import CodeFixer
     from codereview.core.github_client import create_github_client
 
     # Load config
@@ -584,6 +782,7 @@ async def run_fix(
     # Filter files if specified
     if file_filter:
         import fnmatch
+
         diff_entries = [e for e in diff_entries if fnmatch.fnmatch(e.filename, file_filter)]
         if not diff_entries:
             return {
@@ -597,7 +796,9 @@ async def run_fix(
 
     # Get project context (use minimal context for fix)
     from datetime import datetime
+
     from codereview.models import ProjectContext
+
     project_context = ProjectContext(
         tech_stack=["unknown"],
         language="unknown",
@@ -684,7 +885,9 @@ async def run_fix(
 
     # Apply fixes if requested
     applied_count = 0
+    skipped_count = 0
     applied_files = []
+    selected_fixes = []  # Track fixes user selected to apply
 
     if apply and not dry_run:
         # Sort fixes by file and line number (apply from bottom to top to preserve line numbers)
@@ -696,6 +899,7 @@ async def run_fix(
 
         # Track changes for summary
         applied_changes = {}  # filepath -> {"original": str, "fixed": str, "count": int}
+        apply_all_remaining = False
 
         for filepath, file_fixes in fixes_by_file.items():
             if filepath not in file_contents:
@@ -708,25 +912,66 @@ async def run_fix(
             file_fixes.sort(key=lambda f: f.issue.line_number or 0, reverse=True)
 
             for fix in file_fixes:
-                result = await fixer.apply_fix(current_content, fix)
-                if result.success and result.fixed_code:
-                    current_content = result.fixed_code
-                    applied_count += 1
-                else:
-                    logger.warning(f"Failed to apply fix for {filepath}: {result.error}")
+                if interactive and not apply_all_remaining:
+                    # Interactive mode: show fix details and prompt
+                    _print_interactive_fix_prompt(fix, filepath)
 
-            # Write fixed content
-            try:
-                Path(filepath).write_text(current_content, encoding="utf-8")
-                applied_files.append(filepath)
-                applied_changes[filepath] = {
-                    "original": original_content,
-                    "fixed": current_content,
-                    "count": len(file_fixes),
-                }
-                logger.info(f"Applied {len(file_fixes)} fixes to {filepath}")
-            except Exception as e:
-                logger.error(f"Failed to write {filepath}: {e}")
+                    while True:
+                        response = input("Apply this fix? [y/n/a]: ").strip().lower()
+                        if response in ("y", "yes"):
+                            # Apply this fix
+                            result = await fixer.apply_fix(current_content, fix)
+                            if result.success and result.fixed_code:
+                                current_content = result.fixed_code
+                                applied_count += 1
+                                selected_fixes.append(fix)
+                            else:
+                                logger.warning(
+                                    f"Failed to apply fix for {filepath}: {result.error}"
+                                )
+                            break
+                        elif response in ("n", "no"):
+                            # Skip this fix
+                            skipped_count += 1
+                            break
+                        elif response in ("a", "all"):
+                            # Apply all remaining without prompting
+                            apply_all_remaining = True
+                            result = await fixer.apply_fix(current_content, fix)
+                            if result.success and result.fixed_code:
+                                current_content = result.fixed_code
+                                applied_count += 1
+                                selected_fixes.append(fix)
+                            else:
+                                logger.warning(
+                                    f"Failed to apply fix for {filepath}: {result.error}"
+                                )
+                            break
+                        else:
+                            print("Invalid response. Please enter 'y', 'n', or 'a'.")
+                else:
+                    # Non-interactive mode: apply all fixes
+                    result = await fixer.apply_fix(current_content, fix)
+                    if result.success and result.fixed_code:
+                        current_content = result.fixed_code
+                        applied_count += 1
+                        selected_fixes.append(fix)
+                    else:
+                        logger.warning(f"Failed to apply fix for {filepath}: {result.error}")
+
+            # Write fixed content if any fixes were applied
+            if selected_fixes and current_content != original_content:
+                try:
+                    Path(filepath).write_text(current_content, encoding="utf-8")
+                    applied_files.append(filepath)
+                    applied_changes[filepath] = {
+                        "original": original_content,
+                        "fixed": current_content,
+                        "count": len(file_fixes),
+                    }
+                    logger.info(f"Applied {len(file_fixes)} fixes to {filepath}")
+                except Exception as e:
+                    logger.error(f"Failed to write {filepath}: {e}")
 
     return {
         "success": True,
@@ -734,10 +979,41 @@ async def run_fix(
         "total_issues": len(all_issues),
         "fixes_generated": len(fixes),
         "applied": applied_count if apply and not dry_run else 0,
+        "skipped": skipped_count if interactive else 0,
         "applied_files": applied_files if apply and not dry_run else [],
         "applied_changes": applied_changes if apply and not dry_run else {},
         "dry_run": dry_run or not apply,
     }
+
+
+def _print_interactive_fix_prompt(fix, filepath: str) -> None:
+    """Print details of a single fix for interactive mode."""
+    print(f"\n{'=' * 60}")
+    print(f"📄 File: {filepath}")
+    print(f"📍 Line: {fix.issue.line_number}")
+    print(f"🔴 Risk: {fix.risk_level.value.upper()}")
+    print(f"{'=' * 60}")
+    print(f"\nIssue: {fix.issue.description}")
+    if fix.issue.suggestion:
+        print(f"\nSuggestion: {fix.issue.suggestion}")
+
+    # Show diff
+    original_lines = fix.original_code.strip().splitlines()
+    fixed_lines = fix.fixed_code.strip().splitlines()
+
+    print("\n--- Original Code")
+    for line in original_lines[:5]:
+        print(f"   -  {line}")
+    if len(original_lines) > 5:
+        print(f"   -  ... ({len(original_lines) - 5} more lines)")
+
+    print("\n+++ Fixed Code")
+    for line in fixed_lines[:5]:
+        print(f"   +  {line}")
+    if len(fixed_lines) > 5:
+        print(f"   +  ... ({len(fixed_lines) - 5} more lines)")
+
+    print(f"\n💡 {fix.explanation}")
 
 
 def _read_file_content(filepath: str) -> str | None:
@@ -800,14 +1076,28 @@ def main_fix():
     parser.add_argument("--pr", "-p", type=int, help="PR number (fetch diff from GitHub)")
     parser.add_argument("--diff", "-d", type=str, help="JSON diff data or path to diff file")
     parser.add_argument("--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN)")
-    parser.add_argument("--apply", action="store_true", help="Apply fixes to files (default: dry-run)")
+    parser.add_argument(
+        "--apply", action="store_true", help="Apply fixes to files (default: dry-run)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Preview fixes without applying")
-    parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (for CI/non-TTY)")
+    parser.add_argument(
+        "--yes", "-y", action="store_true", help="Skip confirmation prompt (for CI/non-TTY)"
+    )
     parser.add_argument("--file", "-f", type=str, help="Only fix issues in files matching pattern")
-    parser.add_argument("--min-risk", choices=["high", "medium", "low"], default="high",
-                        help="Minimum risk level to fix (default: high)")
+    parser.add_argument(
+        "--min-risk",
+        choices=["high", "medium", "low"],
+        default="high",
+        help="Minimum risk level to fix (default: high)",
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--output", "-o", type=str, help="Save fix preview to file")
+    parser.add_argument(
+        "--interactive",
+        "-i",
+        action="store_true",
+        help="Interactive mode: prompt for each fix (y/n/a)",
+    )
 
     args = parser.parse_args()
 
@@ -827,6 +1117,7 @@ def main_fix():
                 min_risk=args.min_risk,
                 json=args.json,
                 output_path=args.output,
+                interactive=args.interactive,
             )
         )
 
@@ -834,11 +1125,18 @@ def main_fix():
         if args.apply and not args.yes and not args.json:
             # Check if running in TTY
             import sys
+
             if sys.stdout.isatty():
                 fixes_count = result.get("fixes_generated", 0)
                 files_count = len(set(f.get("file") for f in result.get("fixes", [])))
-                print(f"\n{'='*60}")
-                response = input(f"⚠️  Confirm applying {fixes_count} fixes to {files_count} file(s)? [y/N]: ").strip().lower()
+                print(f"\n{'=' * 60}")
+                response = (
+                    input(
+                        f"⚠️  Confirm applying {fixes_count} fixes to {files_count} file(s)? [y/N]: "
+                    )
+                    .strip()
+                    .lower()
+                )
                 if response not in ("y", "yes"):
                     print("❌ Cancelled. No files were modified.")
                     return 1
@@ -878,16 +1176,16 @@ def _print_fix_output(result: dict, args) -> None:
 
     # Header
     mode = "🔍 DRY RUN" if dry_run else "✅ APPLYING"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  CodeReview Agent Fix {mode}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Summary by risk level
-    high_count = sum(1 for f in fixes if f['risk'] == 'high')
-    medium_count = sum(1 for f in fixes if f['risk'] == 'medium')
-    low_count = sum(1 for f in fixes if f['risk'] == 'low')
+    high_count = sum(1 for f in fixes if f["risk"] == "high")
+    medium_count = sum(1 for f in fixes if f["risk"] == "medium")
+    low_count = sum(1 for f in fixes if f["risk"] == "low")
 
-    print(f"\n📊 Risk Summary:")
+    print("\n📊 Risk Summary:")
     if high_count > 0:
         print(f"   🔴 High: {high_count}")
     if medium_count > 0:
@@ -899,6 +1197,8 @@ def _print_fix_output(result: dict, args) -> None:
     # Applied info
     if result.get("applied", 0) > 0:
         print(f"\n   ✅ Applied: {result.get('applied', 0)} fixes")
+        if result.get("skipped", 0) > 0:
+            print(f"   ⏭️  Skipped: {result.get('skipped', 0)} fixes")
 
         # Changes summary
         applied_changes = result.get("applied_changes", {})
@@ -906,9 +1206,9 @@ def _print_fix_output(result: dict, args) -> None:
             total_additions = 0
             total_deletions = 0
 
-            print(f"\n{'='*60}")
-            print(f"  📊 Changes Summary")
-            print(f"{'='*60}")
+            print(f"\n{'=' * 60}")
+            print("  📊 Changes Summary")
+            print(f"{'=' * 60}")
             print(f"   📁 {len(applied_changes)} files modified")
 
             for filepath, change in applied_changes.items():
@@ -918,15 +1218,17 @@ def _print_fix_output(result: dict, args) -> None:
                 total_additions += max(0, additions)
                 total_deletions += max(0, -additions)
 
-                print(f"\n   📄 {filepath} ({change['count']} fix{'es' if change['count'] > 1 else ''}):")
+                print(
+                    f"\n   📄 {filepath} ({change['count']} fix{'es' if change['count'] > 1 else ''}):"
+                )
 
                 # Show first few changes as diff
                 orig_set = set(change["original"].splitlines())
                 fixed_set = set(change["fixed"].splitlines())
 
                 # Find removed and added lines
-                removed = [l for l in orig_set - fixed_set if l.strip()][:2]
-                added = [l for l in fixed_set - orig_set if l.strip()][:2]
+                removed = [ln for ln in orig_set - fixed_set if ln.strip()][:2]
+                added = [ln for ln in fixed_set - orig_set if ln.strip()][:2]
 
                 for line in removed[:2]:
                     print(f"      - {line[:60]}")
@@ -936,7 +1238,7 @@ def _print_fix_output(result: dict, args) -> None:
             print(f"\n   📈 Total: +{total_additions} lines, -{total_deletions} lines")
 
     elif dry_run:
-        print(f"\n   💡 Run with --apply to apply these fixes")
+        print("\n   💡 Run with --apply to apply these fixes")
 
     if not fixes:
         print("\n✨ No issues to fix!")
@@ -945,46 +1247,43 @@ def _print_fix_output(result: dict, args) -> None:
     # Group fixes by file
     fixes_by_file = {}
     for fix_info in fixes:
-        filepath = fix_info['file']
+        filepath = fix_info["file"]
         if filepath not in fixes_by_file:
             fixes_by_file[filepath] = []
         fixes_by_file[filepath].append(fix_info)
 
     # File-level preview
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  📄 Files Summary ({len(fixes_by_file)} files)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for filepath, file_fixes in fixes_by_file.items():
-        risk_emoji = {
-            "high": "🔴",
-            "medium": "🟡",
-            "low": "🟢"
-        }.get(file_fixes[0]['risk'], "⚪")
         print(f"\n  📄 {filepath} ({len(file_fixes)} fix{'es' if len(file_fixes) > 1 else ''})")
         for fix in file_fixes:
-            emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(fix['risk'], "⚪")
+            emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(fix["risk"], "⚪")
             print(f"     {emoji} #{fix['index']}:{fix['line']} - {fix['issue'][:50]}...")
 
     # Detailed diff preview
-    print(f"\n{'='*60}")
-    print(f"  🔍 Diff Preview")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("  🔍 Diff Preview")
+    print(f"{'=' * 60}")
 
     for fix_info in fixes:
-        print(f"\n🔧 #{fix_info['index']} | {fix_info['file']}:{fix_info['line']} | {fix_info['risk'].upper()}")
+        print(
+            f"\n🔧 #{fix_info['index']} | {fix_info['file']}:{fix_info['line']} | {fix_info['risk'].upper()}"
+        )
         print(f"   Issue: {fix_info['issue'][:80]}")
 
         # Git-style diff
-        original_lines = fix_info['original_code'].strip().splitlines()
-        fixed_lines = fix_info['fixed_code'].strip().splitlines()
+        original_lines = fix_info["original_code"].strip().splitlines()
+        fixed_lines = fix_info["fixed_code"].strip().splitlines()
 
-        print(f"\n   --- Original")
+        print("\n   --- Original")
         for line in original_lines[:5]:
             print(f"   -  {line}")
         if len(original_lines) > 5:
             print(f"   -  ... ({len(original_lines) - 5} more lines)")
 
-        print(f"\"   +++ Fixed")
+        print('"   +++ Fixed')
         for line in fixed_lines[:5]:
             print(f"   +  {line}")
         if len(fixed_lines) > 5:
@@ -994,9 +1293,9 @@ def _print_fix_output(result: dict, args) -> None:
 
     # Confirmation prompt for apply mode
     if not dry_run:
-        print(f"\n{'='*60}")
-        print(f"✅ All fixes have been applied successfully!")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("✅ All fixes have been applied successfully!")
+        print(f"{'=' * 60}")
 
 
 def _format_fix_output_text(result: dict) -> str:
@@ -1007,11 +1306,11 @@ def _format_fix_output_text(result: dict) -> str:
     dry_run = result.get("dry_run", True)
 
     # Risk summary
-    high_count = sum(1 for f in fixes if f['risk'] == 'high')
-    medium_count = sum(1 for f in fixes if f['risk'] == 'medium')
-    low_count = sum(1 for f in fixes if f['risk'] == 'low')
+    high_count = sum(1 for f in fixes if f["risk"] == "high")
+    medium_count = sum(1 for f in fixes if f["risk"] == "medium")
+    low_count = sum(1 for f in fixes if f["risk"] == "low")
 
-    lines.append(f"## Summary")
+    lines.append("## Summary")
     lines.append(f"- Mode: {'🔍 DRY RUN' if dry_run else '✅ APPLIED'}")
     lines.append(f"- Total fixes: {len(fixes)}")
     lines.append(f"- 🔴 High: {high_count} | 🟡 Medium: {medium_count} | 🟢 Low: {low_count}")
@@ -1023,7 +1322,7 @@ def _format_fix_output_text(result: dict) -> str:
         # Group by file
         fixes_by_file = {}
         for fix_info in fixes:
-            filepath = fix_info['file']
+            filepath = fix_info["file"]
             if filepath not in fixes_by_file:
                 fixes_by_file[filepath] = []
             fixes_by_file[filepath].append(fix_info)
@@ -1033,22 +1332,24 @@ def _format_fix_output_text(result: dict) -> str:
         for filepath, file_fixes in fixes_by_file.items():
             lines.append(f"- **{filepath}** ({len(file_fixes)} fixes)")
             for fix in file_fixes:
-                emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(fix['risk'], "⚪")
+                emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(fix["risk"], "⚪")
                 lines.append(f"  {emoji} #{fix['index']}:{fix['line']} - {fix['issue'][:60]}")
 
         lines.append("")
         lines.append("## Detailed Fixes")
         for fix_info in fixes:
             lines.append("")
-            lines.append(f"### #{fix_info['index']} | {fix_info['file']}:{fix_info['line']} | {fix_info['risk'].upper()}")
+            lines.append(
+                f"### #{fix_info['index']} | {fix_info['file']}:{fix_info['line']} | {fix_info['risk'].upper()}"
+            )
             lines.append(f"**Issue**: {fix_info['issue']}")
             lines.append("")
             lines.append("```diff")
             lines.append("--- Original")
-            for line in fix_info['original_code'].strip().splitlines():
+            for line in fix_info["original_code"].strip().splitlines():
                 lines.append(f"- {line}")
             lines.append("+++ Fixed")
-            for line in fix_info['fixed_code'].strip().splitlines():
+            for line in fix_info["fixed_code"].strip().splitlines():
                 lines.append(f"+ {line}")
             lines.append("```")
             lines.append(f"**Explanation**: {fix_info['explanation']}")
@@ -1081,7 +1382,7 @@ async def run_merge(
     Returns:
         Dict with merge result
     """
-    from codereview.core.auto_merger import AutoMerger, create_auto_merger
+    from codereview.core.auto_merger import create_auto_merger
     from codereview.core.github_client import create_github_client
 
     # Load config
@@ -1186,7 +1487,9 @@ def main_merge():
     parser.add_argument("--pr", "-p", type=int, required=True, help="PR number")
     parser.add_argument("--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN)")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, don't merge")
-    parser.add_argument("--force", action="store_true", help="Force merge even if conditions are not met")
+    parser.add_argument(
+        "--force", action="store_true", help="Force merge even if conditions are not met"
+    )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--output", "-o", type=str, help="Save preview to file")
 
@@ -1211,26 +1514,34 @@ def main_merge():
             if result.get("dry_run"):
                 print("🔍 Dry Run Mode")
                 preview = result.get("preview", {})
-                print(f"\n{'='*50}")
+                print(f"\n{'=' * 50}")
                 print(f"PR #{args.pr}: {preview.get('pr', {}).get('title', 'Unknown')}")
-                print(f"{'='*50}")
+                print(f"{'=' * 50}")
 
                 can_merge = preview.get("can_merge", False)
                 emoji = "✅" if can_merge else "❌"
                 print(f"\n{emoji} Can Merge: {can_merge}")
                 print(f"Reason: {preview.get('reason', 'Unknown')}")
 
-                print(f"\n📊 Review Confidence: {preview.get('review', {}).get('confidence', 0):.0f}%")
-                print(f"   Required: {preview.get('merge_requirements', {}).get('min_confidence', 0):.0f}%")
+                print(
+                    f"\n📊 Review Confidence: {preview.get('review', {}).get('confidence', 0):.0f}%"
+                )
+                print(
+                    f"   Required: {preview.get('merge_requirements', {}).get('min_confidence', 0):.0f}%"
+                )
 
-                print(f"\n👥 Approvals: {preview.get('current_status', {}).get('approval_count', 0)}")
+                print(
+                    f"\n👥 Approvals: {preview.get('current_status', {}).get('approval_count', 0)}"
+                )
 
                 print(f"\n📁 Files ({preview.get('review', {}).get('filtered_files', 0)}):")
                 for f in preview.get("files", [])[:5]:
-                    risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(f.get("risk_level", ""), "⚪")
+                    risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
+                        f.get("risk_level", ""), "⚪"
+                    )
                     print(f"  {risk_emoji} {f['file_path']} ({f.get('issue_count', 0)} issues)")
 
-                if preview.get("files", []) > 5:
+                if len(preview.get("files", [])) > 5:
                     print(f"  ... and {len(preview.get('files', [])) - 5} more files")
 
             elif result.get("success"):
@@ -1254,6 +1565,7 @@ def main_merge():
 
 if __name__ == "__main__":
     import sys
+
     # Check if running as fix or merge subcommand
     if len(sys.argv) > 1 and sys.argv[1] == "fix":
         sys.argv.pop(1)

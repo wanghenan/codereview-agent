@@ -89,6 +89,38 @@ python -m codereview.cli review --pr 123 --auto-merge
 
 ## ⚡ 快速导航
 
+### CLI 常用命令
+
+```bash
+# 查看版本
+python -m codereview.cli --version
+
+# 查看所有可用规则
+python -m codereview.cli --list-rules
+
+# 查看规则 (JSON 格式)
+python -m codereview.cli --list-rules --json
+
+# 禁用特定规则
+python -m codereview.cli --disable-rule OWASP-A01-001 --diff '{"files": [...]}'
+
+# 清除缓存
+python -m codereview.cli --clear-cache --yes
+
+# 详细输出 (DEBUG 日志)
+python -m codereview.cli --verbose --diff '{"files": [...]}'
+
+# 静默模式 (只显示错误)
+python -m codereview.cli --quiet --diff '{"files": [...]}'
+
+# 指定日志级别
+python -m codereview.cli --log-level DEBUG --diff '{"files": [...]}'
+
+# 交互式修复选择 (fix 命令)
+python -m codereview.cli fix --pr 123 --interactive
+python -m codereview.cli fix --pr 123 -i
+```
+
 ### 使用方式
 ```bash
 # 1. GitHub Action (推荐)

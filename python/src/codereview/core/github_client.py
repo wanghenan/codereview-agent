@@ -5,14 +5,12 @@ Supports both GitHub CLI (gh) and PyGithub for maximum compatibility.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import subprocess
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -158,7 +156,9 @@ class GitHubClient:
 
         raise ValueError("Could not determine repository owner/name")
 
-    def _run_gh(self, args: list[str], input_data: Optional[str] = None) -> subprocess.CompletedProcess:
+    def _run_gh(
+        self, args: list[str], input_data: Optional[str] = None
+    ) -> subprocess.CompletedProcess:
         """Run GitHub CLI command.
 
         Args:
@@ -211,8 +211,12 @@ class GitHubClient:
         """Get PR using GitHub CLI."""
         result = subprocess.run(
             [
-                "gh", "pr", "view", str(pr_number),
-                "--repo", f"{owner}/{repo}",
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--repo",
+                f"{owner}/{repo}",
                 "--json",
                 "number,title,state,headRefOid,baseRefOid,baseRefName,headRefName,"
                 "additions,deletions,changedFiles,author,url,body",
@@ -246,8 +250,8 @@ class GitHubClient:
 
     async def _get_pr_via_api(self, owner: str, repo: str, pr_number: int) -> PullRequest:
         """Get PR using GitHub API directly."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
         headers = {
@@ -261,7 +265,7 @@ class GitHubClient:
             with urllib.request.urlopen(req, timeout=30) as response:
                 data = json.loads(response.read().decode())
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"Failed to get PR: {e.code} {e.reason}")
+            raise RuntimeError(f"Failed to get PR #{pr_number}: {e.code} {e.reason}")
 
         return PullRequest(
             number=data["number"],
@@ -299,9 +303,14 @@ class GitHubClient:
         """Get approvals using GitHub CLI."""
         result = subprocess.run(
             [
-                "gh", "pr", "view", str(pr_number),
-                "--repo", f"{owner}/{repo}",
-                "--json", "reviews",
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--repo",
+                f"{owner}/{repo}",
+                "--json",
+                "reviews",
             ],
             capture_output=True,
             text=True,
@@ -321,19 +330,21 @@ class GitHubClient:
         for review in reversed(reviews):
             user = review["author"]["login"]
             if user not in seen_users and review["state"] == "APPROVED":
-                approvals.append(Approval(
-                    user=user,
-                    state=review["state"],
-                    submitted_at=review["submittedAt"],
-                ))
+                approvals.append(
+                    Approval(
+                        user=user,
+                        state=review["state"],
+                        submitted_at=review["submittedAt"],
+                    )
+                )
                 seen_users.add(user)
 
         return approvals
 
     async def _get_approvals_via_api(self, owner: str, repo: str, pr_number: int) -> list[Approval]:
         """Get approvals using GitHub API."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
         headers = {
@@ -355,11 +366,13 @@ class GitHubClient:
         for review in reversed(reviews):
             user = review["user"]["login"]
             if user not in seen_users and review["state"] == "APPROVED":
-                approvals.append(Approval(
-                    user=user,
-                    state=review["state"],
-                    submitted_at=review["submitted_at"],
-                ))
+                approvals.append(
+                    Approval(
+                        user=user,
+                        state=review["state"],
+                        submitted_at=review["submitted_at"],
+                    )
+                )
                 seen_users.add(user)
 
         return approvals
@@ -397,8 +410,8 @@ class GitHubClient:
 
     async def _get_diff_via_api(self, owner: str, repo: str, pr_number: int) -> list[DiffFile]:
         """Get diff using GitHub API."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
         headers = {
@@ -412,7 +425,7 @@ class GitHubClient:
             with urllib.request.urlopen(req, timeout=60) as response:
                 files = json.loads(response.read().decode())
         except urllib.error.HTTPError as e:
-            raise RuntimeError(f"Failed to get PR diff: {e.code} {e.reason}")
+            raise RuntimeError(f"Failed to get PR #{pr_number} diff: {e.code} {e.reason}")
 
         return [
             DiffFile(
@@ -449,14 +462,16 @@ class GitHubClient:
             if line.startswith("diff --git"):
                 # Save previous file
                 if current_file:
-                    files.append(DiffFile(
-                        filename=current_file,
-                        status=status,
-                        additions=additions,
-                        deletions=deletions,
-                        patch="\n".join(patch_lines),
-                        previous_filename=previous_filename,
-                    ))
+                    files.append(
+                        DiffFile(
+                            filename=current_file,
+                            status=status,
+                            additions=additions,
+                            deletions=deletions,
+                            patch="\n".join(patch_lines),
+                            previous_filename=previous_filename,
+                        )
+                    )
 
                 # Parse new file
                 match = re.match(r"diff --git a/(.*) b/(.*)", line)
@@ -503,14 +518,16 @@ class GitHubClient:
 
         # Save last file
         if current_file:
-            files.append(DiffFile(
-                filename=current_file,
-                status=status,
-                additions=additions,
-                deletions=deletions,
-                patch="\n".join(patch_lines),
-                previous_filename=previous_filename,
-            ))
+            files.append(
+                DiffFile(
+                    filename=current_file,
+                    status=status,
+                    additions=additions,
+                    deletions=deletions,
+                    patch="\n".join(patch_lines),
+                    previous_filename=previous_filename,
+                )
+            )
 
         return files
 
@@ -564,8 +581,12 @@ class GitHubClient:
         }[merge_method]
 
         args = [
-            "gh", "pr", "merge", str(pr_number),
-            "--repo", f"{owner}/{repo}",
+            "gh",
+            "pr",
+            "merge",
+            str(pr_number),
+            "--repo",
+            f"{owner}/{repo}",
             method_flag,
             "--auto",  # Auto-delete branch
         ]
@@ -598,8 +619,8 @@ class GitHubClient:
         commit_message: Optional[str],
     ) -> bool:
         """Merge using GitHub API."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge"
         headers = {
@@ -652,12 +673,21 @@ class GitHubClient:
 
         if self.gh_available:
             result = subprocess.run(
-                ["gh", "pr", "comment", str(pr_number),
-                 "--repo", f"{owner}/{repo}",
-                 "--body", body],
+                [
+                    "gh",
+                    "pr",
+                    "comment",
+                    str(pr_number),
+                    "--repo",
+                    f"{owner}/{repo}",
+                    "--body",
+                    body,
+                ],
                 capture_output=True,
                 text=True,
-                env={**os.environ, "GH_TOKEN": self.github_token} if self.github_token else os.environ,
+                env={**os.environ, "GH_TOKEN": self.github_token}
+                if self.github_token
+                else os.environ,
                 timeout=30,
             )
             return result.returncode == 0
@@ -666,8 +696,8 @@ class GitHubClient:
 
     async def _post_comment_via_api(self, owner: str, repo: str, pr_number: int, body: str) -> bool:
         """Post comment using GitHub API."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
         headers = {
@@ -693,7 +723,9 @@ class GitHubClient:
             logger.error(f"Failed to post comment: {e.code} {e.reason}")
             return False
 
-    async def get_check_runs(self, pr_number: int, sha: Optional[str] = None) -> list[dict[str, Any]]:
+    async def get_check_runs(
+        self, pr_number: int, sha: Optional[str] = None
+    ) -> list[dict[str, Any]]:
         """Get check runs for a PR.
 
         Args:
@@ -712,13 +744,17 @@ class GitHubClient:
         if self.gh_available:
             result = subprocess.run(
                 [
-                    "gh", "api",
+                    "gh",
+                    "api",
                     f"/repos/{owner}/{repo}/commits/{commit_sha}/check-runs",
-                    "--jq", ".check_runs[]",
+                    "--jq",
+                    ".check_runs[]",
                 ],
                 capture_output=True,
                 text=True,
-                env={**os.environ, "GH_TOKEN": self.github_token} if self.github_token else os.environ,
+                env={**os.environ, "GH_TOKEN": self.github_token}
+                if self.github_token
+                else os.environ,
                 timeout=30,
             )
             if result.returncode == 0 and result.stdout:
@@ -727,10 +763,12 @@ class GitHubClient:
         else:
             return await self._get_check_runs_via_api(owner, repo, commit_sha)
 
-    async def _get_check_runs_via_api(self, owner: str, repo: str, sha: str) -> list[dict[str, Any]]:
+    async def _get_check_runs_via_api(
+        self, owner: str, repo: str, sha: str
+    ) -> list[dict[str, Any]]:
         """Get check runs using GitHub API."""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}/check-runs"
         headers = {

@@ -7,14 +7,13 @@ found during code review and generate specific fix suggestions using LLM.
 from __future__ import annotations
 
 import difflib
-import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 from codereview.models import FileIssue, RiskLevel
 
@@ -192,42 +191,85 @@ class CodeFixer:
 
         # Security-related keywords
         security_keywords = [
-            "sql injection", "xss", "cross-site", "csrf", "injection",
-            "authentication", "authorization", "password", "secret",
-            "credential", "vulnerability", "security", "unsafe",
-            "eval", "exec", "hardcoded", "api key", "token",
+            "sql injection",
+            "xss",
+            "cross-site",
+            "csrf",
+            "injection",
+            "authentication",
+            "authorization",
+            "password",
+            "secret",
+            "credential",
+            "vulnerability",
+            "security",
+            "unsafe",
+            "eval",
+            "exec",
+            "hardcoded",
+            "api key",
+            "token",
         ]
         if any(kw in combined for kw in security_keywords):
             return FixType.SECURITY
 
         # Performance keywords
         performance_keywords = [
-            "performance", "slow", "memory", "leak", "n+1",
-            "query", "database", "cache", "optimize", "efficient",
+            "performance",
+            "slow",
+            "memory",
+            "leak",
+            "n+1",
+            "query",
+            "database",
+            "cache",
+            "optimize",
+            "efficient",
         ]
         if any(kw in combined for kw in performance_keywords):
             return FixType.PERFORMANCE
 
         # Code style keywords
         style_keywords = [
-            "style", "format", "lint", "convention", "naming",
-            "unused", "import", "variable", "function name",
+            "style",
+            "format",
+            "lint",
+            "convention",
+            "naming",
+            "unused",
+            "import",
+            "variable",
+            "function name",
         ]
         if any(kw in combined for kw in style_keywords):
             return FixType.CODE_STYLE
 
         # Bug fix keywords
         bug_keywords = [
-            "bug", "error", "exception", "crash", "fix",
-            "wrong", "incorrect", "issue", "problem", "fail",
+            "bug",
+            "error",
+            "exception",
+            "crash",
+            "fix",
+            "wrong",
+            "incorrect",
+            "issue",
+            "problem",
+            "fail",
         ]
         if any(kw in combined for kw in bug_keywords):
             return FixType.BUG_FIX
 
         # Best practice keywords
         best_practice_keywords = [
-            "best practice", "recommend", "should", "consider",
-            "improve", "refactor", "deprecated", "anti-pattern",
+            "best practice",
+            "recommend",
+            "should",
+            "consider",
+            "improve",
+            "refactor",
+            "deprecated",
+            "anti-pattern",
         ]
         if any(kw in combined for kw in best_practice_keywords):
             return FixType.BEST_PRACTICE
@@ -275,7 +317,7 @@ class CodeFixer:
                         "language": language,
                     }
                 ),
-                timeout=self.timeout_seconds
+                timeout=self.timeout_seconds,
             )
 
             return FixSuggestion(
@@ -295,7 +337,9 @@ class CodeFixer:
             logger.error(f"Fix generation failed: {e}")
             return None
 
-    def _build_fix_prompt(self, issue: FileIssue, original_code: str, language: str) -> ChatPromptTemplate:
+    def _build_fix_prompt(
+        self, issue: FileIssue, original_code: str, language: str
+    ) -> ChatPromptTemplate:
         """Build prompt for fix generation."""
         return ChatPromptTemplate.from_messages(
             [("system", FIX_SYSTEM_PROMPT), ("user", """Generate a fix for this issue.""")]
@@ -334,7 +378,6 @@ class CodeFixer:
                 file_lines = full_file_content.splitlines()
 
                 # Find the best match
-                best_match = None
                 best_index = -1
 
                 for i in range(len(file_lines) - len(original_lines) + 1):
@@ -344,16 +387,15 @@ class CodeFixer:
                             match = False
                             break
                     if match:
-                        best_match = i
                         best_index = i
                         break
 
                 if best_index >= 0:
                     # Replace the matched lines
                     new_lines = (
-                        file_lines[:best_index] +
-                        fix_suggestion.fixed_code.strip().splitlines() +
-                        file_lines[best_index + len(original_lines):]
+                        file_lines[:best_index]
+                        + fix_suggestion.fixed_code.strip().splitlines()
+                        + file_lines[best_index + len(original_lines) :]
                     )
                     return FixResult(
                         success=True,
