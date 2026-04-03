@@ -1022,6 +1022,7 @@ async def run_merge(
     dry_run: bool = False,
     output_path: str | None = None,
     json: bool = False,
+    force: bool = False,
 ) -> dict:
     """Run auto-merge for a PR.
 
@@ -1032,6 +1033,7 @@ async def run_merge(
         dry_run: Only check, don't actually merge
         output_path: Optional path to save merge preview
         json: Output as JSON
+        force: Skip condition checks and force merge
 
     Returns:
         Dict with merge result
@@ -1112,6 +1114,7 @@ async def run_merge(
             pr_number=pr_number,
             approval_count=approval_count,
             dry_run=False,
+            force=force,
         )
 
         return {
@@ -1140,6 +1143,7 @@ def main_merge():
     parser.add_argument("--pr", "-p", type=int, required=True, help="PR number")
     parser.add_argument("--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN)")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, don't merge")
+    parser.add_argument("--force", action="store_true", help="Force merge even if conditions are not met")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--output", "-o", type=str, help="Save preview to file")
 
@@ -1154,6 +1158,7 @@ def main_merge():
                 dry_run=args.dry_run,
                 output_path=args.output,
                 json=args.json,
+                force=args.force,
             )
         )
 
@@ -1186,7 +1191,8 @@ def main_merge():
                     print(f"  ... and {len(preview.get('files', [])) - 5} more files")
 
             elif result.get("success"):
-                print(f"✅ {result.get('message')}")
+                force_note = " (forced)" if args.force else ""
+                print(f"✅ {result.get('message')}{force_note}")
                 if result.get("merged"):
                     print(f"   Merge method: {result.get('merge_method', 'squash')}")
             else:

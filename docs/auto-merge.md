@@ -202,11 +202,14 @@ output:
 # 只运行 review
 python -m codereview.cli review --pr 123
 
-# 单独运行 merge
+# 单独运行 merge（预览模式）
 python -m codereview.cli merge --pr 123 --dry-run
 
 # 确认后合并
 python -m codereview.cli merge --pr 123
+
+# 强制合并（跳过条件检查）
+python -m codereview.cli merge --pr 123 --force
 ```
 
 ---
@@ -229,6 +232,11 @@ python -m codereview.cli merge --pr 123
 4. **设置合理的阈值**
    - 初次使用建议 `minConfidence: 95`
    - 团队熟悉后可适当降低
+
+5. **`--force` 慎用**
+   - `--force` 会跳过所有条件检查（置信度、审批、CI）
+   - 仅在你确定代码安全、只是未满足配置条件时使用
+   - 例如：本地测试 PR、紧急修复、已人工 review 过的代码
 
 ---
 

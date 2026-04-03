@@ -267,14 +267,15 @@ class AutoMerger:
         approval_count: int = 0,
         merge_method: str = "squash",
         dry_run: bool = False,
+        force: bool = False,
     ) -> MergeResult:
         """Attempt to automatically merge a PR.
 
         This is the main entry point for auto-merging. It:
         1. Checks if auto-merge is enabled
         2. Gets PR info and approvals from GitHub
-        3. Checks merge conditions
-        4. Performs the merge if conditions are met
+        3. Checks merge conditions (unless force=True)
+        4. Performs the merge if conditions are met (or if force=True)
 
         Args:
             review_result: The code review result
@@ -285,6 +286,7 @@ class AutoMerger:
             approval_count: Number of approvals on the PR
             merge_method: Merge method (squash, merge, or rebase)
             dry_run: If True, only simulate the merge without actually merging
+            force: If True, skip all condition checks and merge directly
 
         Returns:
             MergeResult indicating success/failure and details
@@ -344,20 +346,23 @@ class AutoMerger:
                 pr_number=pr_number,
             )
 
-        # Check merge conditions
-        can_merge, reason = self.check_merge_conditions(
-            filtered_result,
-            approval_count,
-            check_runs,
-        )
-
-        if not can_merge:
-            logger.info(f"PR #{pr_number} does not meet merge conditions: {reason}")
-            return MergeResult(
-                success=False,
-                message=reason,
-                pr_number=pr_number,
+        # Check merge conditions (skip if force=True)
+        if not force:
+            can_merge, reason = self.check_merge_conditions(
+                filtered_result,
+                approval_count,
+                check_runs,
             )
+
+            if not can_merge:
+                logger.info(f"PR #{pr_number} does not meet merge conditions: {reason}")
+                return MergeResult(
+                    success=False,
+                    message=reason,
+                    pr_number=pr_number,
+                )
+        else:
+            logger.warning(f"PR #{pr_number}: Force merge enabled, skipping condition checks")
 
         # Dry run mode
         if dry_run:
