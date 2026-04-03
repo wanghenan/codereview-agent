@@ -24,6 +24,7 @@
 | 🔒 **自托管部署** | 支持私有化部署，数据不出网，适合安全敏感团队 |
 | 🛠️ **智能修复** | 发现问题？直接生成修复代码，一键应用！ |
 | 🔄 **自动合并** | 审查通过后自动合并 PR，省去人工操作 |
+| 🔁 **智能重试** | 失败任务自动重试（3次 + 指数退避），不遗漏 |
 | 📊 **代码复杂度评分** | 多维度量化代码复杂度，识别潜在技术债务 |
 | 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
 | 🔄 **历史回溯** | 智能缓存机制，支持历史对比和趋势分析 |
@@ -36,17 +37,22 @@
 ### 🔧 智能修复 - 一键修复代码问题
 
 ```bash
-# 预览修复（显示风险汇总 + 文件列表 + Git-style Diff）
+# 预览修复（风险汇总 + 文件分组 + Git Diff）
 python -m codereview.cli fix --pr 123
 
-# 应用修复
+# 应用修复（交互确认）
 python -m codereview.cli fix --pr 123 --apply
+
+# 应用修复（CI模式，跳过确认）
+python -m codereview.cli fix --pr 123 --apply --yes
 ```
 
-**🆕 预览增强：**
-- 📊 风险级别汇总（🔴高 / 🟡中 / 🟢低 各多少）
+**🆕 新增特性：**
+- 📊 风险级别汇总（🔴高 / 🟡中 / 🟢低）
 - 📄 按文件分组显示
 - 📝 Git-style Diff 预览
+- ⚠️ 交互确认提示，防止误操作
+- 📊 应用后显示变更汇总
 
 **[→ 智能修复完整指南](./docs/fix-command.md)**
 
@@ -55,9 +61,32 @@ python -m codereview.cli fix --pr 123 --apply
 ```bash
 # Review + Merge 预览
 python -m codereview.cli review --pr 123 --auto-merge
+
+# 单独 merge 命令
+python -m codereview.cli merge --pr 123 --dry-run
+
+# 强制合并（跳过条件检查）
+python -m codereview.cli merge --pr 123 --force
 ```
 
+**🆕 新增特性：**
+- 🔄 `review --auto-merge` 一体化命令
+- 💪 `--force` 跳过条件强制合并
+- 📊 实时进度显示
+
 **[→ 自动合并完整指南](./docs/auto-merge.md)**
+
+### 📦 缓存优化 - Patch 规范化
+
+相同逻辑的代码（仅格式变化）不会重复消耗 LLM token。
+
+**[→ 缓存机制详解](./docs/cache.md)**
+
+### 📝 自定义提示词
+
+支持自定义 system prompt，满足团队特定审查标准。
+
+**[→ 配置详解](./docs/configuration.md)**
 
 ---
 
@@ -305,8 +334,12 @@ python -m codereview.cli --diff '{\"files\": [...]}'
 - [📖 用户指南](./docs/USER_GUIDE.md) - 完整的使用说明和配置参考
 - [🔧 智能修复](./docs/fix-command.md) - 一键修复代码问题
 - [🔄 自动合并](./docs/auto-merge.md) - 审查通过自动合并
+- [💾 缓存机制](./docs/cache.md) - Patch 规范化，节省 token
+- [⚙️ 配置详解](./docs/configuration.md) - 自定义提示词、重试机制
 - [📊 AI vs 人工对比](./docs/COMPARISON.md) - 效率分析和成本对比
 - [💡 使用场景](./docs/USE_CASES.md) - 真实用户故事
+- [❓ 常见问题](./docs/faq.md) - FAQ 解答
+- [🔧 故障排查](./docs/troubleshooting.md) - 问题诊断与解决
 
 ---
 
