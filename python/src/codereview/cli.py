@@ -694,11 +694,15 @@ async def run_fix(
                 fixes_by_file[fix.issue.file_path] = []
             fixes_by_file[fix.issue.file_path].append(fix)
 
+        # Track changes for summary
+        applied_changes = {}  # filepath -> {"original": str, "fixed": str, "count": int}
+
         for filepath, file_fixes in fixes_by_file.items():
             if filepath not in file_contents:
                 continue
 
             current_content = file_contents[filepath]
+            original_content = current_content  # Keep for diff
 
             # Sort by line number descending (fix bottom-up)
             file_fixes.sort(key=lambda f: f.issue.line_number or 0, reverse=True)
@@ -715,6 +719,11 @@ async def run_fix(
             try:
                 Path(filepath).write_text(current_content, encoding="utf-8")
                 applied_files.append(filepath)
+                applied_changes[filepath] = {
+                    "original": original_content,
+                    "fixed": current_content,
+                    "count": len(file_fixes),
+                }
                 logger.info(f"Applied {len(file_fixes)} fixes to {filepath}")
             except Exception as e:
                 logger.error(f"Failed to write {filepath}: {e}")
@@ -726,6 +735,7 @@ async def run_fix(
         "fixes_generated": len(fixes),
         "applied": applied_count if apply and not dry_run else 0,
         "applied_files": applied_files if apply and not dry_run else [],
+        "applied_changes": applied_changes if apply and not dry_run else {},
         "dry_run": dry_run or not apply,
     }
 
@@ -889,9 +899,42 @@ def _print_fix_output(result: dict, args) -> None:
     # Applied info
     if result.get("applied", 0) > 0:
         print(f"\n   ✅ Applied: {result.get('applied', 0)} fixes")
-        print(f"   📁 Files modified:")
-        for filepath in result.get("applied_files", []):
-            print(f"      - {filepath}")
+
+        # Changes summary
+        applied_changes = result.get("applied_changes", {})
+        if applied_changes:
+            total_additions = 0
+            total_deletions = 0
+
+            print(f"\n{'='*60}")
+            print(f"  📊 Changes Summary")
+            print(f"{'='*60}")
+            print(f"   📁 {len(applied_changes)} files modified")
+
+            for filepath, change in applied_changes.items():
+                orig_lines = change["original"].splitlines()
+                fixed_lines = change["fixed"].splitlines()
+                additions = len(fixed_lines) - len(orig_lines)
+                total_additions += max(0, additions)
+                total_deletions += max(0, -additions)
+
+                print(f"\n   📄 {filepath} ({change['count']} fix{'es' if change['count'] > 1 else ''}):")
+
+                # Show first few changes as diff
+                orig_set = set(change["original"].splitlines())
+                fixed_set = set(change["fixed"].splitlines())
+
+                # Find removed and added lines
+                removed = [l for l in orig_set - fixed_set if l.strip()][:2]
+                added = [l for l in fixed_set - orig_set if l.strip()][:2]
+
+                for line in removed[:2]:
+                    print(f"      - {line[:60]}")
+                for line in added[:2]:
+                    print(f"      + {line[:60]}")
+
+            print(f"\n   📈 Total: +{total_additions} lines, -{total_deletions} lines")
+
     elif dry_run:
         print(f"\n   💡 Run with --apply to apply these fixes")
 

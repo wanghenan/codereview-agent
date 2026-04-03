@@ -103,7 +103,7 @@ class OutputGenerator:
             "|------|------|--------|",
         ]
 
-        for file_review in result.files_reviewed[:10]:
+        for file_review in result.files_reviewed:
             risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
                 file_review.risk_level.value, "⚪"
             )

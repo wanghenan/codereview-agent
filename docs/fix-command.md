@@ -185,6 +185,39 @@ python -m codereview.cli fix --pr 123 --min-risk high --apply
 
 ---
 
+## 📊 变更汇总
+
+应用修复后，会自动显示变更汇总：
+
+```
+✅ Applied: 3 fixes
+
+============================================================
+  📊 Changes Summary
+============================================================
+   📁 2 files modified
+
+   📄 src/auth.py (2 fixes):
+      - cursor.execute(f"SELECT * FROM users WHERE name = '{username}'")
+      + cursor.execute("SELECT * FROM users WHERE name = %s", (username,))
+      - password = "hardcoded123"
+      + password = os.getenv("PASSWORD")
+
+   📄 src/utils.py (1 fix):
+      - result = eval(user_input)
+      + result = ast.literal_eval(user_input)
+
+   📈 Total: +3 lines, -3 lines
+```
+
+**包含内容：**
+- 修改的文件数量
+- 每个文件的修复数量
+- 具体变更内容（+/- 对比）
+- 总行数变化
+
+---
+
 ## 🔒 安全建议
 
 1. **确认提示**：使用 `--apply` 时会询问确认，输入 `y` 确认，`n` 取消
