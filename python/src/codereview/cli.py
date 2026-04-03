@@ -164,6 +164,9 @@ async def run_review(
     git_branch: str | None = None,
     rules_dir: str | None = None,
     disable_cache: bool = False,
+    auto_merge: bool = False,
+    github_token: str | None = None,
+    merge_dry_run: bool = True,
 ) -> dict:
     """Run the code review process.
 
@@ -177,9 +180,12 @@ async def run_review(
         git_branch: Git branch to compare against
         rules_dir: Custom rules directory
         disable_cache: Disable file-level review cache
+        auto_merge: Automatically merge PR if conditions are met
+        github_token: GitHub token (overrides config)
+        merge_dry_run: Dry run for auto-merge (default: True)
 
     Returns:
-        Dict with review results
+        Dict with review results and optionally merge result
     """
     # Load config
     config = ConfigLoader.load(config_path)
@@ -271,7 +277,59 @@ async def run_review(
         stats = file_cache.get_stats()
         logger.info(f"File cache stats: {stats}")
 
-    return {"result": result.model_dump(), "outputs": outputs}
+    # Auto-merge if requested
+    merge_output = None
+    if auto_merge and pr_number:
+        from codereview.core.auto_merger import create_auto_merger
+        from codereview.core.github_client import create_github_client
+
+        try:
+            github_client = create_github_client(github_token=github_token)
+            merger = create_auto_merger(config.output.auto_merge, github_client)
+
+            # Get approvals
+            approvals = await github_client.get_pr_approvals(pr_number)
+            approval_count = len(approvals)
+
+            if merge_dry_run:
+                # Get merge preview
+                preview = await merger.get_merge_preview(
+                    review_result=result,
+                    pr_number=pr_number,
+                    github_token=github_token,
+                )
+                merge_output = {
+                    "dry_run": True,
+                    "preview": preview,
+                }
+            else:
+                # Perform merge
+                merge_result = await merger.merge(
+                    review_result=result,
+                    pr_number=pr_number,
+                    approval_count=approval_count,
+                    github_token=github_token,
+                    dry_run=False,
+                )
+                merge_output = {
+                    "dry_run": False,
+                    "success": merge_result.success,
+                    "message": merge_result.message,
+                    "merged": merge_result.merged,
+                    "merge_method": merge_result.merge_method,
+                }
+        except Exception as e:
+            logger.error(f"Auto-merge failed: {e}")
+            merge_output = {
+                "error": str(e),
+                "success": False,
+            }
+
+    result_dict = {"result": result.model_dump(), "outputs": outputs}
+    if merge_output:
+        result_dict["merge"] = merge_output
+
+    return result_dict
 
 
 def _parse_diff(diff_input: str | None) -> list[DiffEntry]:
@@ -363,6 +421,18 @@ def main():
         "--no-cache", action="store_true",
         help="Disable file-level review caching"
     )
+    
+    # Auto-merge arguments
+    parser.add_argument(
+        "--auto-merge",
+        action="store_true",
+        help="Automatically merge PR if conditions are met (requires --pr)"
+    )
+    
+    parser.add_argument(
+        "--token", "-t", type=str,
+        help="GitHub token (or set GITHUB_TOKEN env var)"
+    )
 
     args = parser.parse_args()
 
@@ -379,6 +449,9 @@ def main():
                 git_branch=args.base_branch or args.branch,
                 rules_dir=args.rules_dir,
                 disable_cache=args.no_cache,
+                auto_merge=args.auto_merge,
+                github_token=args.token,
+                merge_dry_run=True,  # Always dry-run for now, --apply-auto-merge for non-dry
             )
         )
 
@@ -393,6 +466,38 @@ def main():
             if "markdown" in result.get("outputs", {}):
                 print(f"\n📄 Full report generated.")
 
+            # Print merge info if auto-merge was requested
+            if args.auto_merge and "merge" in result:
+                merge_result = result["merge"]
+                print(f"\n{'='*50}")
+                print(f"  Auto-Merge Preview")
+                print(f"{'='*50}")
+                
+                if "error" in merge_result:
+                    print(f"❌ {merge_result['error']}")
+                elif merge_result.get("dry_run"):
+                    preview = merge_result.get("preview", {})
+                    can_merge = preview.get("can_merge", False)
+                    emoji = "✅" if can_merge else "❌"
+                    print(f"\n{emoji} Can Merge: {can_merge}")
+                    print(f"Reason: {preview.get('reason', 'Unknown')}")
+                    print(f"\n📊 Review Confidence: {preview.get('review', {}).get('confidence', 0):.0f}%")
+                    print(f"   Required: {preview.get('merge_requirements', {}).get('min_confidence', 0):.0f}%")
+                    print(f"\n👥 Approvals: {preview.get('current_status', {}).get('approval_count', 0)}")
+                    print(f"\n📁 Files ({preview.get('review', {}).get('filtered_files', 0)}):")
+                    for f in preview.get("files", [])[:5]:
+                        risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(f.get("risk_level", ""), "⚪")
+                        print(f"  {risk_emoji} {f['file_path']} ({f.get('issue_count', 0)} issues)")
+                    if preview.get("files", []) > 5:
+                        print(f"  ... and {len(preview.get('files', [])) - 5} more files")
+                else:
+                    if merge_result.get("success"):
+                        print(f"✅ {merge_result.get('message')}")
+                        if merge_result.get("merged"):
+                            print(f"   Merge method: {merge_result.get('merge_method', 'squash')}")
+                    else:
+                        print(f"❌ {merge_result.get('message', 'Merge failed')}")
+
         return 0
 
     except Exception as e:
@@ -400,6 +505,424 @@ def main():
         if args.json:
             print(json.dumps({"error": str(e)}), file=sys.stderr)
         return 1
+
+
+async def run_fix(
+    config_path: str | Path | None = None,
+    pr_number: int | None = None,
+    github_token: str | None = None,
+    diff_input: str | None = None,
+    apply: bool = False,
+    dry_run: bool = False,
+    file_filter: str | None = None,
+    min_risk: str = "high",
+    json: bool = False,
+    output_path: str | None = None,
+) -> dict:
+    """Generate and optionally apply fixes for code issues.
+
+    Args:
+        config_path: Path to config file
+        pr_number: PR number (if reading from GitHub)
+        github_token: GitHub token (overrides config)
+        diff_input: JSON diff data or path to diff file
+        apply: Actually apply fixes to files
+        dry_run: Only preview, don't apply (default True unless apply=True)
+        file_filter: Only fix issues in files matching this pattern
+        min_risk: Minimum risk level to fix (high, medium, low)
+        json: Output as JSON
+        output_path: Optional path to save fix preview
+
+    Returns:
+        Dict with fix results
+    """
+    from codereview.core.fixer import CodeFixer, FixOrchestrator, FixSuggestion
+    from codereview.core.github_client import create_github_client
+
+    # Load config
+    config = ConfigLoader.load(config_path)
+
+    # Determine files to process
+    diff_entries = []
+    file_contents = {}
+
+    if pr_number:
+        # Get diff from GitHub
+        github_client = create_github_client(github_token=github_token)
+        try:
+            diff_files = await github_client.get_pr_diff(pr_number)
+            diff_entries = [
+                DiffEntry(
+                    filename=f.filename,
+                    status=f.status,
+                    additions=f.additions,
+                    deletions=f.deletions,
+                    patch=f.patch,
+                )
+                for f in diff_files
+            ]
+            logger.info(f"Fetched {len(diff_entries)} files from PR #{pr_number}")
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to fetch PR #{pr_number}: {e}",
+            }
+    elif diff_input:
+        diff_entries = _parse_diff(diff_input)
+        if not diff_entries:
+            return {
+                "success": False,
+                "error": "No diff entries found in input",
+            }
+    else:
+        return {
+            "success": False,
+            "error": "Either --pr or --diff must be provided",
+            "hint": "Use --pr <number> for GitHub PR or --diff <json/file> for local diff",
+        }
+
+    # Filter files if specified
+    if file_filter:
+        import fnmatch
+        diff_entries = [e for e in diff_entries if fnmatch.fnmatch(e.filename, file_filter)]
+        if not diff_entries:
+            return {
+                "success": False,
+                "error": f"No files match pattern: {file_filter}",
+            }
+
+    # Run review to get issues
+    llm = LLMFactory.create(config.llm)
+    orchestrator = ReviewOrchestrator(config, llm)
+
+    # Get project context (use minimal context for fix)
+    from datetime import datetime
+    from codereview.models import ProjectContext
+    project_context = ProjectContext(
+        tech_stack=["unknown"],
+        language="unknown",
+        critical_paths=config.critical_paths,
+        analyzed_at=datetime.now().isoformat(),
+    )
+
+    result = await orchestrator.run_review(diff_entries, project_context)
+
+    # Collect issues
+    all_issues = []
+    for file_review in result.files_reviewed:
+        for issue in file_review.issues:
+            # Filter by risk level
+            if issue.risk_level.value in [min_risk, "high", "medium"]:
+                if issue.risk_level.value in ("high", "medium") or min_risk == "low":
+                    all_issues.append((file_review.filename, issue))
+
+    if not all_issues:
+        return {
+            "success": True,
+            "message": "No issues found matching the criteria",
+            "fixes": [],
+            "applied": False,
+        }
+
+    # Read file contents for all affected files
+    affected_files = list(set(f for f, _ in all_issues))
+    for filepath in affected_files:
+        content = _read_file_content(filepath)
+        if content:
+            file_contents[filepath] = content
+
+    # Detect languages
+    languages = {}
+    for filepath in affected_files:
+        languages[filepath] = _detect_language(filepath)
+
+    # Generate fixes
+    fixer = CodeFixer(llm, timeout_seconds=30.0)
+    fixes = []
+
+    for filepath, issue in all_issues:
+        if filepath not in file_contents:
+            logger.warning(f"Could not read file: {filepath}")
+            continue
+
+        original_code = file_contents[filepath]
+        language = languages.get(filepath, "python")
+
+        fix = await fixer.generate_fix(
+            issue=issue,
+            original_code=original_code,
+            language=language,
+        )
+
+        if fix:
+            fixes.append(fix)
+
+    if not fixes:
+        return {
+            "success": True,
+            "message": "Could not generate any fixes",
+            "issues_count": len(all_issues),
+            "fixes_generated": 0,
+            "applied": False,
+        }
+
+    # Format fixes for display
+    fixes_output = []
+    for i, fix in enumerate(fixes, 1):
+        fix_info = {
+            "index": i,
+            "file": fix.issue.file_path,
+            "line": fix.issue.line_number,
+            "risk": fix.risk_level.value,
+            "issue": fix.issue.description,
+            "original_code": fix.original_code,
+            "fixed_code": fix.fixed_code,
+            "explanation": fix.explanation,
+            "diff": fix.to_diff(),
+        }
+        fixes_output.append(fix_info)
+
+    # Apply fixes if requested
+    applied_count = 0
+    applied_files = []
+
+    if apply and not dry_run:
+        # Sort fixes by file and line number (apply from bottom to top to preserve line numbers)
+        fixes_by_file = {}
+        for fix in fixes:
+            if fix.issue.file_path not in fixes_by_file:
+                fixes_by_file[fix.issue.file_path] = []
+            fixes_by_file[fix.issue.file_path].append(fix)
+
+        for filepath, file_fixes in fixes_by_file.items():
+            if filepath not in file_contents:
+                continue
+
+            current_content = file_contents[filepath]
+
+            # Sort by line number descending (fix bottom-up)
+            file_fixes.sort(key=lambda f: f.issue.line_number or 0, reverse=True)
+
+            for fix in file_fixes:
+                result = await fixer.apply_fix(current_content, fix)
+                if result.success and result.fixed_code:
+                    current_content = result.fixed_code
+                    applied_count += 1
+                else:
+                    logger.warning(f"Failed to apply fix for {filepath}: {result.error}")
+
+            # Write fixed content
+            try:
+                Path(filepath).write_text(current_content, encoding="utf-8")
+                applied_files.append(filepath)
+                logger.info(f"Applied {len(file_fixes)} fixes to {filepath}")
+            except Exception as e:
+                logger.error(f"Failed to write {filepath}: {e}")
+
+    return {
+        "success": True,
+        "fixes": fixes_output,
+        "total_issues": len(all_issues),
+        "fixes_generated": len(fixes),
+        "applied": applied_count if apply and not dry_run else 0,
+        "applied_files": applied_files if apply and not dry_run else [],
+        "dry_run": dry_run or not apply,
+    }
+
+
+def _read_file_content(filepath: str) -> str | None:
+    """Read file content with multiple encoding attempts."""
+    path = Path(filepath)
+    if not path.exists():
+        return None
+
+    # Try UTF-8 first
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        pass
+
+    # Try other common encodings
+    for encoding in ["utf-8-sig", "gbk", "gb2312", "latin-1"]:
+        try:
+            return path.read_text(encoding=encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    return None
+
+
+def _detect_language(filename: str) -> str:
+    """Detect programming language from file extension."""
+    ext = Path(filename).suffix.lower()
+    language_map = {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "javascript",
+        ".jsx": "javascript",
+        ".tsx": "javascript",
+        ".java": "java",
+        ".go": "go",
+        ".rs": "rust",
+        ".rb": "ruby",
+        ".php": "php",
+        ".cs": "csharp",
+        ".cpp": "cpp",
+        ".c": "c",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".scala": "scala",
+        ".vue": "vue",
+        ".svelte": "svelte",
+    }
+    return language_map.get(ext, "python")
+
+
+def main_fix():
+    """Main entry point for fix CLI."""
+    parser = argparse.ArgumentParser(
+        description="CodeReview Agent Fix - Generate and apply fixes for code issues"
+    )
+
+    parser.add_argument("--config", "-c", type=str, help="Path to config file")
+    parser.add_argument("--pr", "-p", type=int, help="PR number (fetch diff from GitHub)")
+    parser.add_argument("--diff", "-d", type=str, help="JSON diff data or path to diff file")
+    parser.add_argument("--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN)")
+    parser.add_argument("--apply", action="store_true", help="Apply fixes to files (default: dry-run)")
+    parser.add_argument("--dry-run", action="store_true", help="Preview fixes without applying")
+    parser.add_argument("--file", "-f", type=str, help="Only fix issues in files matching pattern")
+    parser.add_argument("--min-risk", choices=["high", "medium", "low"], default="high",
+                        help="Minimum risk level to fix (default: high)")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--output", "-o", type=str, help="Save fix preview to file")
+
+    args = parser.parse_args()
+
+    # Determine dry_run mode
+    dry_run = args.dry_run or not args.apply
+
+    try:
+        result = asyncio.run(
+            run_fix(
+                config_path=args.config,
+                pr_number=args.pr,
+                github_token=args.token,
+                diff_input=args.diff,
+                apply=args.apply,
+                dry_run=dry_run,
+                file_filter=args.file,
+                min_risk=args.min_risk,
+                json=args.json,
+                output_path=args.output,
+            )
+        )
+
+        if args.json:
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            _print_fix_output(result, args)
+
+        # Save to file if specified
+        if args.output and not args.json:
+            output_content = _format_fix_output_text(result)
+            Path(args.output).write_text(output_content, encoding="utf-8")
+            print(f"\n📄 Fix preview saved to: {args.output}")
+
+        return 0 if result.get("success") else 1
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": str(e)}), file=sys.stderr)
+        return 1
+
+
+def _print_fix_output(result: dict, args) -> None:
+    """Print fix output in human-readable format."""
+    if not result.get("success"):
+        print(f"❌ {result.get('error', 'Unknown error')}")
+        if result.get("hint"):
+            print(f"💡 {result.get('hint')}")
+        return
+
+    mode = "🔍 DRY RUN" if result.get("dry_run") else "✅ APPLYING"
+    print(f"\n{'='*60}")
+    print(f"  CodeReview Agent Fix {mode}")
+    print(f"{'='*60}")
+
+    print(f"\n📊 Summary:")
+    print(f"   Issues found: {result.get('total_issues', 0)}")
+    print(f"   Fixes generated: {result.get('fixes_generated', 0)}")
+
+    if result.get("applied", 0) > 0:
+        print(f"   ✅ Applied: {result.get('applied', 0)} fixes")
+        print(f"   📁 Files modified:")
+        for filepath in result.get("applied_files", []):
+            print(f"      - {filepath}")
+    elif result.get("dry_run"):
+        print(f"   (Run with --apply to apply fixes)")
+
+    fixes = result.get("fixes", [])
+    if fixes:
+        print(f"\n{'='*60}")
+        print("  Fix Preview")
+        print(f"{'='*60}")
+
+        for fix_info in fixes:
+            print(f"\n🔧 Fix #{fix_info['index']}: {fix_info['file']}:{fix_info['line']}")
+            print(f"   Risk: {fix_info['risk'].upper()}")
+            print(f"   Issue: {fix_info['issue'][:80]}")
+            print(f"\n   Original:")
+            for line in fix_info['original_code'].strip().splitlines()[:5]:
+                print(f"      {line}")
+            print(f"\n   Fixed:")
+            for line in fix_info['fixed_code'].strip().splitlines()[:5]:
+                print(f"      {line}")
+            print(f"\n   Explanation: {fix_info['explanation'][:100]}")
+
+            # Show unified diff
+            diff = fix_info.get('diff', '')
+            if diff:
+                print(f"\n   Diff:")
+                for line in diff.splitlines()[:10]:
+                    print(f"      {line}")
+
+
+def _format_fix_output_text(result: dict) -> str:
+    """Format fix output as text for file export."""
+    lines = ["# CodeReview Agent Fix Preview", ""]
+
+    lines.append(f"## Summary")
+    lines.append(f"- Issues found: {result.get('total_issues', 0)}")
+    lines.append(f"- Fixes generated: {result.get('fixes_generated', 0)}")
+    lines.append(f"- Applied: {result.get('applied', 0)}")
+    lines.append(f"- Mode: {'DRY RUN' if result.get('dry_run') else 'APPLIED'}")
+
+    fixes = result.get("fixes", [])
+    if fixes:
+        lines.append("")
+        lines.append("## Fixes")
+        for fix_info in fixes:
+            lines.append("")
+            lines.append(f"### #{fix_info['index']}: {fix_info['file']}:{fix_info['line']}")
+            lines.append(f"- **Risk**: {fix_info['risk']}")
+            lines.append(f"- **Issue**: {fix_info['issue']}")
+            lines.append("")
+            lines.append("**Original:**")
+            lines.append("```")
+            lines.append(fix_info['original_code'].strip())
+            lines.append("```")
+            lines.append("")
+            lines.append("**Fixed:**")
+            lines.append("```")
+            lines.append(fix_info['fixed_code'].strip())
+            lines.append("```")
+            lines.append("")
+            lines.append(f"**Explanation**: {fix_info['explanation']}")
+
+    return "\n".join(lines)
 
 
 async def run_merge(
@@ -592,7 +1115,10 @@ def main_merge():
 
 if __name__ == "__main__":
     import sys
-    # Check if running as merge subcommand
+    # Check if running as fix or merge subcommand
+    if len(sys.argv) > 1 and sys.argv[1] == "fix":
+        sys.argv.pop(1)
+        sys.exit(main_fix())
     if len(sys.argv) > 1 and sys.argv[1] == "merge":
         sys.argv.pop(1)
         sys.exit(main_merge())
