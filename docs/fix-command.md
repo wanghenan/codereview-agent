@@ -10,8 +10,11 @@ CodeReview Agent 不仅能发现问题，还能自动修复代码问题！
 # 预览修复（不实际修改文件）
 python -m codereview.cli fix --pr 123
 
-# 确认无误后，应用修复
+# 应用修复（会询问确认）
 python -m codereview.cli fix --pr 123 --apply
+
+# 应用修复（跳过确认，用于 CI/脚本）
+python -m codereview.cli fix --pr 123 --apply --yes
 ```
 
 ---
@@ -157,8 +160,9 @@ python -m codereview.cli fix --pr 123 --min-risk low
 | `--pr` | `-p` | PR 编号（从 GitHub 获取 diff） | - |
 | `--diff` | `-d` | diff 数据或文件路径 | - |
 | `--token` | `-t` | GitHub Token（或设置 `GITHUB_TOKEN` 环境变量） | - |
-| `--apply` | | 应用修复到文件 | `False`（默认 dry-run） |
+| `--apply` | | 应用修复到文件（会询问确认） | `False`（默认 dry-run） |
 | `--dry-run` | | 仅预览，不应用 | `True` |
+| `--yes` | `-y` | 跳过确认提示（用于 CI/非交互模式） | `False` |
 | `--file` | `-f` | 文件过滤模式（glob） | 全部文件 |
 | `--min-risk` | | 最小风险级别 | `high` |
 | `--json` | | 输出 JSON 格式 | `False` |
@@ -183,17 +187,21 @@ python -m codereview.cli fix --pr 123 --min-risk high --apply
 
 ## 🔒 安全建议
 
-1. **先用 dry-run 模式**：预览所有修复，确认无误后再应用
-2. **版本控制**：修复前确保代码已提交到 git
-3. **逐步应用**：先用 `--min-risk high` 修复高风险问题，确认无误后再处理中低风险
-4. **备份**：重要项目建议先备份或创建修复分支
+1. **确认提示**：使用 `--apply` 时会询问确认，输入 `y` 确认，`n` 取消
+2. **CI 模式**：在 CI/脚本中使用 `--yes` 跳过确认
+3. **先用 dry-run 模式**：预览所有修复，确认无误后再应用
+4. **版本控制**：修复前确保代码已提交到 git
+5. **逐步应用**：先用 `--min-risk high` 修复高风险问题，确认无误后再处理中低风险
+6. **备份**：重要项目建议先备份或创建修复分支
 
 ```bash
-# 推荐流程
+# 推荐流程（交互模式）
 git checkout -b fix/my-changes
 python -m codereview.cli fix --pr 123 --min-risk high --apply
-git diff  # 检查修改
-git commit -m "Apply code review fixes"
+# 输入 y 确认
+
+# CI/脚本模式
+python -m codereview.cli fix --pr 123 --min-risk high --apply --yes
 ```
 
 ---

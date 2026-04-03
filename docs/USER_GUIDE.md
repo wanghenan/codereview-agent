@@ -189,6 +189,26 @@ output:
 
 ---
 
+## 进度显示
+
+CLI 运行时，会实时显示审查进度：
+
+```
+📊 Reviewing: 5/50 (10%) - login.py
+📊 Reviewing: 10/50 (20%) - helpers.py
+📊 Reviewing: 15/50 (30%) - auth.py
+...
+✅ Review complete: 48/50 files reviewed
+```
+
+**特点：**
+- 📊 实时显示完成数量和百分比
+- 🔄 并行处理，性能不受影响
+- 📝 每个文件完成后立即记录日志
+- ✨ 缓存的文件不计入进度（已跳过）
+
+---
+
 ## 常见问题
 
 ### Q: 如何选择 Provider？

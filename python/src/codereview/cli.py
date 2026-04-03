@@ -792,6 +792,7 @@ def main_fix():
     parser.add_argument("--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN)")
     parser.add_argument("--apply", action="store_true", help="Apply fixes to files (default: dry-run)")
     parser.add_argument("--dry-run", action="store_true", help="Preview fixes without applying")
+    parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt (for CI/non-TTY)")
     parser.add_argument("--file", "-f", type=str, help="Only fix issues in files matching pattern")
     parser.add_argument("--min-risk", choices=["high", "medium", "low"], default="high",
                         help="Minimum risk level to fix (default: high)")
@@ -818,6 +819,21 @@ def main_fix():
                 output_path=args.output,
             )
         )
+
+        # Confirmation prompt for apply mode
+        if args.apply and not args.yes and not args.json:
+            # Check if running in TTY
+            import sys
+            if sys.stdout.isatty():
+                fixes_count = result.get("fixes_generated", 0)
+                files_count = len(set(f.get("file") for f in result.get("fixes", [])))
+                print(f"\n{'='*60}")
+                response = input(f"⚠️  Confirm applying {fixes_count} fixes to {files_count} file(s)? [y/N]: ").strip().lower()
+                if response not in ("y", "yes"):
+                    print("❌ Cancelled. No files were modified.")
+                    return 1
+                print("✅ Applying fixes...")
+            # Non-TTY: proceed without confirmation
 
         if args.json:
             print(json.dumps(result, indent=2, ensure_ascii=False))

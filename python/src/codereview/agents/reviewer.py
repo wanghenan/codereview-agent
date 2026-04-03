@@ -140,9 +140,20 @@ class ReviewAgent:
         semaphore = asyncio.Semaphore(self.max_concurrency)
         max_retries = 3
 
-        async def review_with_semaphore(entry: DiffEntry) -> Optional[FileReview]:
+        # Track progress
+        completed = 0
+        total = 0
+
+        async def review_with_semaphore(entry: DiffEntry) -> tuple[DiffEntry, Optional[FileReview]]:
+            nonlocal completed
             async with semaphore:
-                return await self._review_file_with_retry(entry, max_retries=max_retries)
+                result = await self._review_file_with_retry(entry, max_retries=max_retries)
+                completed += 1
+                # Log progress
+                percent = 100 * completed // total if total > 0 else 0
+                short_name = entry.filename.split("/")[-1] if entry.filename else "unknown"
+                logger.info(f"📊 Reviewing: {completed}/{total} ({percent}%) - {short_name}")
+                return (entry, result)
 
         # Check for cached results first
         tasks = []
@@ -163,13 +174,16 @@ class ReviewAgent:
 
             tasks.append(review_with_semaphore(entry))
 
+        total = len(tasks)
+
         # Run remaining reviews in parallel
         if tasks:
-            reviews = await asyncio.gather(*tasks, return_exceptions=True)
+            # Use as_completed to process results as they come in
+            for coro in asyncio.as_completed(tasks):
+                entry, review = await coro
 
-            for review in reviews:
                 if isinstance(review, Exception):
-                    logger.error(f"Review failed after retries: {review}")
+                    logger.error(f"Review failed for {entry.filename}: {review}")
                     continue
                 if review:
                     results.append(review)
@@ -184,6 +198,10 @@ class ReviewAgent:
 
         # Add cached results
         results.extend(cached_results.values())
+
+        # Log completion
+        if total > 0:
+            logger.info(f"✅ Review complete: {len(results)}/{total} files reviewed")
 
         return results
 
