@@ -120,6 +120,45 @@ class TestFileReviewCache:
         assert stats["valid"] == 2
         assert stats["expired"] == 0
 
+    def test_normalize_patch_removes_whitespace(self):
+        """Test that normalize_patch removes trailing whitespace."""
+        patch1 = """+    console.log('hello')
+-    console.log('world')
+"""
+        patch2 = """+console.log('hello')
+-console.log('world')
+"""
+        # Both should normalize to same value
+        norm1 = self.cache._normalize_patch(patch1)
+        norm2 = self.cache._normalize_patch(patch2)
+        assert norm1 == norm2
+
+    def test_normalize_patch_removes_duplicates(self):
+        """Test that normalize_patch removes duplicate lines."""
+        patch = """+line1
++line1
++line2
+"""
+        norm = self.cache._normalize_patch(patch)
+        lines = norm.split("\n")
+        # Should have only 2 unique lines
+        assert lines.count("+line1") == 1
+        assert "+line2" in lines
+
+    def test_normalize_patch_handles_empty(self):
+        """Test that normalize_patch handles empty patches."""
+        assert self.cache._normalize_patch("") == ""
+        assert self.cache._normalize_patch(None) == ""
+
+    def test_normalize_patch_keeps_hunk_headers(self):
+        """Test that normalize_patch keeps hunk headers."""
+        patch = """@@ -1,5 +1,5 @@
++    console.log('hello')
+-    console.log('world')
+"""
+        norm = self.cache._normalize_patch(patch)
+        assert "@@ -1,5 +1,5 @@" in norm
+
 
 class TestCacheManager:
     """Test CacheManager class."""

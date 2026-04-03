@@ -41,6 +41,57 @@ class FileReviewCache:
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self.FILE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+    def _normalize_patch(self, patch: str) -> str:
+        """Normalize patch for consistent hashing.
+
+        Extracts semantic content of a diff, ignoring:
+        - Trailing whitespace
+        - Duplicate content lines
+        - Empty lines
+        - Whitespace-only formatting changes
+
+        This ensures that semantically identical patches (even with different
+        whitespace) will produce the same cache key.
+
+        Args:
+            patch: Raw diff patch content
+
+        Returns:
+            Normalized patch string
+        """
+        if not patch:
+            return ""
+
+        lines = patch.splitlines()
+        normalized = []
+        seen = set()
+
+        for line in lines:
+            # Skip empty lines
+            if not line.strip():
+                continue
+
+            # Get the meaningful content (strip +/- for diff lines)
+            if line.startswith("+"):
+                content = "+" + line.lstrip("+").strip()
+            elif line.startswith("-"):
+                content = "-" + line.lstrip("-").strip()
+            else:
+                content = line.strip()
+
+            # Skip duplicate content
+            if content in seen:
+                continue
+            seen.add(content)
+
+            # Keep hunk headers as-is
+            if line.startswith("@@"):
+                normalized.append(line)
+            else:
+                normalized.append(content)
+
+        return "\n".join(normalized)
+
     def _get_file_hash(self, filename: str, content: str) -> str:
         """Generate hash for file content.
 
@@ -51,7 +102,9 @@ class FileReviewCache:
         Returns:
             Hash string
         """
-        data = f"{filename}:{content}"
+        # Normalize patch for consistent hashing
+        normalized_content = self._normalize_patch(content)
+        data = f"{filename}:{normalized_content}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 
     def _get_cache_path(self, filename: str) -> Path:
