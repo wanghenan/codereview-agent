@@ -138,15 +138,16 @@ class ReviewAgent:
         """
         results = []
         semaphore = asyncio.Semaphore(self.max_concurrency)
+        max_retries = 3
 
         async def review_with_semaphore(entry: DiffEntry) -> Optional[FileReview]:
             async with semaphore:
-                return await self._review_file(entry)
+                return await self._review_file_with_retry(entry, max_retries=max_retries)
 
         # Check for cached results first
         tasks = []
         cached_results = {}
-        
+
         for entry in diff_entries:
             # Skip excluded patterns
             if self._should_exclude(entry.filename):
@@ -165,19 +166,19 @@ class ReviewAgent:
         # Run remaining reviews in parallel
         if tasks:
             reviews = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             for review in reviews:
                 if isinstance(review, Exception):
-                    logger.error(f"Review failed: {review}")
+                    logger.error(f"Review failed after retries: {review}")
                     continue
                 if review:
                     results.append(review)
-                    
+
                     # Cache the result
                     if self.file_cache and review.file_path and entry.patch:
                         self.file_cache.save(
-                            review.file_path, 
-                            entry.patch, 
+                            review.file_path,
+                            entry.patch,
                             review.model_dump()
                         )
 
@@ -185,6 +186,53 @@ class ReviewAgent:
         results.extend(cached_results.values())
 
         return results
+
+    async def _review_file_with_retry(
+        self, entry: DiffEntry, max_retries: int = 3
+    ) -> Optional[FileReview]:
+        """Review a single file with retry logic.
+
+        Args:
+            entry: File diff entry
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            File review result or None if all retries failed
+        """
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                result = await self._review_file(entry)
+                if attempt > 0:
+                    logger.info(f"Retry succeeded for {entry.filename} on attempt {attempt + 1}")
+                return result
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
+                    logger.warning(
+                        f"Review failed for {entry.filename} (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Retrying in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        f"Review failed for {entry.filename} after {max_retries} attempts: {e}"
+                    )
+
+        # All retries failed, return a degraded result
+        return FileReview(
+            file_path=entry.filename,
+            risk_level=RiskLevel.MEDIUM,
+            changes=f"+{entry.additions}, -{entry.deletions}",
+            issues=[FileIssue(
+                file_path=entry.filename,
+                risk_level=RiskLevel.MEDIUM,
+                description=f"Review failed after {max_retries} attempts: {last_error}",
+                suggestion="Consider reviewing this file manually or breaking it into smaller changes"
+            )],
+        )
 
     def _should_exclude(self, filename: str) -> bool:
         """Check if file should be excluded from review."""
@@ -281,33 +329,43 @@ class ReviewAgent:
             )
 
         except asyncio.TimeoutError:
-            logger.warning(f"Review timed out for {entry.filename}")
-            # Return a basic review on timeout
-            return FileReview(
-                file_path=entry.filename,
-                risk_level=RiskLevel.MEDIUM,
-                changes=f"+{entry.additions}, -{entry.deletions}",
-                issues=[FileIssue(
-                    file_path=entry.filename,
-                    risk_level=RiskLevel.MEDIUM,
-                    description="Review timed out, manual review recommended",
-                    suggestion="Consider reviewing this file manually or breaking it into smaller changes"
-                )],
-            )
+            # Re-raise timeout so retry logic can handle it
+            raise
         except Exception as e:
-            logger.error(f"Review failed for {entry.filename}: {e}")
-            # Return a basic review on error
-            return FileReview(
-                file_path=entry.filename,
-                risk_level=RiskLevel.LOW,
-                changes=f"+{entry.additions}, -{entry.deletions}",
-                issues=[],
-            )
+            # Re-raise other exceptions so retry logic can handle them
+            raise
 
     def _build_prompt(self, entry: DiffEntry) -> ChatPromptTemplate:
-        """Build prompt for file review."""
+        """Build prompt for file review.
+
+        If config.custom_prompt_path is set and valid, loads template from file.
+        Otherwise falls back to default REVIEW_SYSTEM_PROMPT.
+
+        Template variables supported:
+        - {project_context}: Project context from analysis
+        - {critical_paths}: List of critical paths
+        - {exclude_patterns}: List of exclude patterns
+        - {static_results}: Static analysis results
+        - {filename}: Current file being reviewed
+        - {status}: File status (added/modified/deleted)
+        - {additions}: Number of lines added
+        - {deletions}: Number of lines deleted
+        - {patch}: The actual diff patch
+        """
+        prompt_template = REVIEW_SYSTEM_PROMPT
+
+        # Check for custom prompt path
+        if self.config.custom_prompt_path:
+            custom_path = Path(self.config.custom_prompt_path)
+            if custom_path.exists() and custom_path.is_file():
+                try:
+                    prompt_template = custom_path.read_text(encoding="utf-8")
+                    logger.info(f"Using custom prompt from {custom_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to load custom prompt {custom_path}: {e}, using default")
+
         return ChatPromptTemplate.from_messages(
-            [("system", REVIEW_SYSTEM_PROMPT), ("user", """Review this code change.""")]
+            [("system", prompt_template), ("user", """Review this code change.""")]
         )
 
     def _is_critical_path(self, filename: str) -> bool:
