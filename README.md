@@ -22,11 +22,37 @@
 | 🎯 **置信度评分** | 0-100% 可视化评分，50% 以下建议人工审核，50% 以上可放心合并 |
 | 🌐 **6 大 LLM 支持** | OpenAI、Anthropic、智谱AI、MiniMax、阿里云、DeepSeek |
 | 🔒 **自托管部署** | 支持私有化部署，数据不出网，适合安全敏感团队 |
-| 🛠️ **智能修复** | 不仅发现问题，还提供修复建议，可一键应用 |
+| 🛠️ **智能修复** | 发现问题？直接生成修复代码，一键应用！ |
+| 🔄 **自动合并** | 审查通过后自动合并 PR，省去人工操作 |
 | 📊 **代码复杂度评分** | 多维度量化代码复杂度，识别潜在技术债务 |
 | 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
 | 🔄 **历史回溯** | 智能缓存机制，支持历史对比和趋势分析 |
 | 👥 **团队洞察** | 统计团队 review 数据，识别高频问题模式 |
+
+---
+
+## 🚀 新功能 - 试试看！
+
+### 🔧 智能修复 - 一键修复代码问题
+
+```bash
+# 预览修复建议
+python -m codereview.cli fix --pr 123
+
+# 应用修复
+python -m codereview.cli fix --pr 123 --apply
+```
+
+**[→ 智能修复完整指南](./docs/fix-command.md)**
+
+### 🔄 自动合并 - 审查通过自动合
+
+```bash
+# Review + Merge 预览
+python -m codereview.cli review --pr 123 --auto-merge
+```
+
+**[→ 自动合并完整指南](./docs/auto-merge.md)**
 
 ---
 
@@ -269,7 +295,10 @@ python -m codereview.cli --diff '{\"files\": [...]}'
 
 ## 📚 完整文档
 
+- [📖 文档首页](./docs/README.md) - **推荐从这里开始**
 - [📖 用户指南](./docs/USER_GUIDE.md) - 完整的使用说明和配置参考
+- [🔧 智能修复](./docs/fix-command.md) - 一键修复代码问题
+- [🔄 自动合并](./docs/auto-merge.md) - 审查通过自动合并
 - [📊 AI vs 人工对比](./docs/COMPARISON.md) - 效率分析和成本对比
 - [💡 使用场景](./docs/USE_CASES.md) - 真实用户故事
 
