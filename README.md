@@ -29,6 +29,7 @@
 | 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
 | 🔄 **历史回溯** | 智能缓存机制，支持历史对比和趋势分析 |
 | 👥 **团队洞察** | 统计团队 review 数据，识别高频问题模式 |
+| 🤖 **AI Agent 友好** | 结构化 JSON + 语义退出码，AI Agent 可靠调用 |
 
 ---
 
@@ -87,6 +88,90 @@ python -m codereview.cli merge --pr 123 --force
 支持自定义 system prompt，满足团队特定审查标准。
 
 **[→ 配置详解](./docs/configuration.md)**
+
+---
+
+## 🤖 AI Agent 友好
+
+CodeReview Agent CLI 专为 AI Agent（如 Claude、GPT、Cursor 等）优化，提供**结构化 JSON 输出**和**语义化退出码**，让 AI Agent 可以可靠地调用、解析和决策。
+
+### 为什么对 AI Agent 友好？
+
+| 特性 | 说明 |
+|------|------|
+| **结构化 JSON 错误** | 即使出错也输出有效 JSON 到 stderr，Agent 永远不会解析失败 |
+| **语义化退出码** | 0=成功, 1=发现问题, 2=配置错误, 3=LLM错误, 4=网络错误, 5=未知错误 |
+| **schema_version** | 所有 JSON 输出包含版本号，Agent 可以适配不同版本 |
+| **fix_available** | 每个问题标记是否有可用修复建议，Agent 可自动决策是否修复 |
+
+### 退出码参考
+
+| 退出码 | 含义 | Agent 应对 |
+|--------|------|-----------|
+| `0` | 审查成功，无高风险问题 | 继续流程 |
+| `1` | 审查成功，发现风险问题 | 检查 `fix_available`，考虑修复 |
+| `2` | 配置错误（API Key 缺失等） | 提示用户检查配置 |
+| `3` | LLM 错误（超时、限流等） | 重试或切换模型 |
+| `4` | 网络错误（连接失败等） | 检查网络后重试 |
+| `5` | 未知错误 | 查看 stderr 获取详情 |
+
+### JSON 输出格式
+
+成功时（stdout）：
+```json
+{
+  "schema_version": "1.1",
+  "result": { "files_reviewed": [...], "confidence": 85 },
+  "outputs": { ... }
+}
+```
+
+失败时（stderr）：
+```json
+{
+  "schema_version": "1.1",
+  "success": false,
+  "error": {
+    "type": "config_error",
+    "message": "api_key is required",
+    "exit_code": 2
+  }
+}
+```
+
+### 让 AI Agent 使用的提示词
+
+**场景 1：代码审查 + 自动修复**
+
+```
+你是一个代码审查助手。请执行以下步骤：
+1. 运行 `python -m codereview.cli --json --diff '<diff_json>'` 审查代码
+2. 如果退出码为 0，报告"代码审查通过"
+3. 如果退出码为 1，解析 JSON 输出，筛选 `fix_available: true` 的问题
+4. 对可修复的问题，运行 `python -m codereview.cli fix --apply --yes` 应用修复
+5. 如果退出码为 2-5，根据 error.type 向用户报告具体错误
+```
+
+**场景 2：PR 审查集成**
+
+```
+你是 CI/CD 审查机器人。对每个 PR：
+1. 运行 `python -m codereview.cli --json --pr <PR_NUMBER>`
+2. 解析返回的 JSON，检查 result.confidence
+3. confidence >= 70 且退出码为 0：批准 PR
+4. confidence < 70：列出高风险文件，请求人工审查
+5. 退出码非 0：根据 error.type 决定是否重试（3=LLM错误可重试，4=网络错误可重试）
+```
+
+**场景 3：仅检测（不修复）**
+
+```
+请审查以下代码变更：
+1. 运行 `python -m codereview.cli --json --diff '<diff>' --output-only`
+2. 将 JSON 结果格式化为人类可读的审查报告
+3. 按风险级别排序：🔴高 > 🟡中 > 🟢低
+4. 对每个 `fix_available: true` 的问题，附上修复建议
+```
 
 ---
 

@@ -223,7 +223,7 @@ class TestDisableRuleCli:
 
         # Should not error (even with empty diff)
         # The important thing is --disable-rule is accepted
-        assert result.returncode in (0, 1)  # 1 if no actual review happens
+        assert result.returncode in (0, 1, 2)
 
     def test_disable_rule_comma_separated(self):
         """Test that --disable-rule supports comma-separated rule IDs."""
@@ -245,7 +245,7 @@ class TestDisableRuleCli:
         )
 
         # Should not error
-        assert result.returncode in (0, 1)
+        assert result.returncode in (0, 1, 2)
 
     def test_disable_rule_invalid_id_warning(self):
         """Test that --disable-rule with invalid ID outputs warning.
