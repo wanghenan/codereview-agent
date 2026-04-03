@@ -1,6 +1,6 @@
 # CodeReview Agent
 
-🤖 AI 驱动的 CodeReview 智能体，自动识别代码风险，让每一次提交都有底气的 Code Review 工具。
+🤖 AI 驱动的 CodeReview 智能体 —— **人类开发者 & AI Agent 都能用的 CLI 工具**。自动识别代码风险，让每一次提交都有底气。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/wanghenan/codereview-agent)](https://github.com/wanghenan/codereview-agent/stargazers)
@@ -11,91 +11,23 @@
 
 ## 一句话介绍
 
-**CodeReview Agent** 利用 AI 技术自动分析代码变更，智能识别安全风险和质量缺陷，提供 0-100% 置信度评分，帮助团队快速决定哪些代码可以直接合并、哪些需要人工重点审核。
+**CodeReview Agent** 利用 AI 技术自动分析代码变更，智能识别安全风险和质量缺陷，提供 0-100% 置信度评分。**CLI 原生支持 AI Agent 调用** —— 结构化 JSON 输出 + 语义化退出码，Claude、GPT、Cursor 等任何 AI Agent 都可以可靠地调用、解析和自动决策。
 
 ---
 
-## ✨ 核心亮点
+## 🤖 AI Agent 友好（开发者 + AI Agent 双模式）
 
-| 亮点 | 说明 |
-|------|------|
-| 🎯 **置信度评分** | 0-100% 可视化评分，50% 以下建议人工审核，50% 以上可放心合并 |
-| 🌐 **6 大 LLM 支持** | OpenAI、Anthropic、智谱AI、MiniMax、阿里云、DeepSeek |
-| 🔒 **自托管部署** | 支持私有化部署，数据不出网，适合安全敏感团队 |
-| 🛠️ **智能修复** | 发现问题？直接生成修复代码，一键应用！ |
-| 🔄 **自动合并** | 审查通过后自动合并 PR，省去人工操作 |
-| 🔁 **智能重试** | 失败任务自动重试（3次 + 指数退避），不遗漏 |
-| 📊 **代码复杂度评分** | 多维度量化代码复杂度，识别潜在技术债务 |
-| 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
-| 🔄 **历史回溯** | 智能缓存机制，支持历史对比和趋势分析 |
-| 👥 **团队洞察** | 统计团队 review 数据，识别高频问题模式 |
-| 🤖 **AI Agent 友好** | 结构化 JSON + 语义退出码，AI Agent 可靠调用 |
-
----
-
-## 🚀 新功能 - 试试看！
-
-### 🔧 智能修复 - 一键修复代码问题
+CLI 为 AI Agent（Claude、GPT、Cursor、Windsurf 等）专门优化，同时也完全兼容人类开发者使用：
 
 ```bash
-# 预览修复（风险汇总 + 文件分组 + Git Diff）
-python -m codereview.cli fix --pr 123
+# 👨‍💻 人类模式 —— 可读输出，emoji，交互确认
+python -m codereview.cli --diff '{"files": [...]}'
 
-# 应用修复（交互确认）
-python -m codereview.cli fix --pr 123 --apply
-
-# 应用修复（CI模式，跳过确认）
-python -m codereview.cli fix --pr 123 --apply --yes
+# 🤖 Agent 模式 —— 结构化 JSON + 语义退出码
+python -m codereview.cli --json --diff '{"files": [...]}'
 ```
 
-**🆕 新增特性：**
-- 📊 风险级别汇总（🔴高 / 🟡中 / 🟢低）
-- 📄 按文件分组显示
-- 📝 Git-style Diff 预览
-- ⚠️ 交互确认提示，防止误操作
-- 📊 应用后显示变更汇总
-
-**[→ 智能修复完整指南](./docs/fix-command.md)**
-
-### 🔄 自动合并 - 审查通过自动合
-
-```bash
-# Review + Merge 预览
-python -m codereview.cli review --pr 123 --auto-merge
-
-# 单独 merge 命令
-python -m codereview.cli merge --pr 123 --dry-run
-
-# 强制合并（跳过条件检查）
-python -m codereview.cli merge --pr 123 --force
-```
-
-**🆕 新增特性：**
-- 🔄 `review --auto-merge` 一体化命令
-- 💪 `--force` 跳过条件强制合并
-- 📊 实时进度显示
-
-**[→ 自动合并完整指南](./docs/auto-merge.md)**
-
-### 📦 缓存优化 - Patch 规范化
-
-相同逻辑的代码（仅格式变化）不会重复消耗 LLM token。
-
-**[→ 缓存机制详解](./docs/cache.md)**
-
-### 📝 自定义提示词
-
-支持自定义 system prompt，满足团队特定审查标准。
-
-**[→ 配置详解](./docs/configuration.md)**
-
----
-
-## 🤖 AI Agent 友好
-
-CodeReview Agent CLI 专为 AI Agent（如 Claude、GPT、Cursor 等）优化，提供**结构化 JSON 输出**和**语义化退出码**，让 AI Agent 可以可靠地调用、解析和决策。
-
-### 为什么对 AI Agent 友好？
+### Agent 专用特性
 
 | 特性 | 说明 |
 |------|------|
@@ -172,6 +104,83 @@ CodeReview Agent CLI 专为 AI Agent（如 Claude、GPT、Cursor 等）优化，
 3. 按风险级别排序：🔴高 > 🟡中 > 🟢低
 4. 对每个 `fix_available: true` 的问题，附上修复建议
 ```
+
+---
+
+## ✨ 核心亮点
+
+| 亮点 | 说明 |
+|------|------|
+| 🤖 **AI Agent 友好 CLI** | 结构化 JSON + 语义退出码，Claude/GPT/Cursor 等直接调用 |
+| 🎯 **置信度评分** | 0-100% 可视化评分，50% 以下建议人工审核，50% 以上可放心合并 |
+| 🌐 **6 大 LLM 支持** | OpenAI、Anthropic、智谱AI、MiniMax、阿里云、DeepSeek |
+| 🔒 **自托管部署** | 支持私有化部署，数据不出网，适合安全敏感团队 |
+| 🛠️ **智能修复** | 发现问题？直接生成修复代码，一键应用！ |
+| 🔄 **自动合并** | 审查通过后自动合并 PR，省去人工操作 |
+| 🔁 **智能重试** | 失败任务自动重试（3次 + 指数退避），不遗漏 |
+| 📊 **代码复杂度评分** | 多维度量化代码复杂度，识别潜在技术债务 |
+| 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
+| 🔄 **历史回溯** | 智能缓存机制，支持历史对比和趋势分析 |
+| 👥 **团队洞察** | 统计团队 review 数据，识别高频问题模式 |
+| 🤖 **AI Agent 友好** | 结构化 JSON + 语义退出码，AI Agent 可靠调用 |
+
+---
+
+## 🚀 新功能 - 试试看！
+
+### 🔧 智能修复 - 一键修复代码问题
+
+```bash
+# 预览修复（风险汇总 + 文件分组 + Git Diff）
+python -m codereview.cli fix --pr 123
+
+# 应用修复（交互确认）
+python -m codereview.cli fix --pr 123 --apply
+
+# 应用修复（CI模式，跳过确认）
+python -m codereview.cli fix --pr 123 --apply --yes
+```
+
+**🆕 新增特性：**
+- 📊 风险级别汇总（🔴高 / 🟡中 / 🟢低）
+- 📄 按文件分组显示
+- 📝 Git-style Diff 预览
+- ⚠️ 交互确认提示，防止误操作
+- 📊 应用后显示变更汇总
+
+**[→ 智能修复完整指南](./docs/fix-command.md)**
+
+### 🔄 自动合并 - 审查通过自动合
+
+```bash
+# Review + Merge 预览
+python -m codereview.cli review --pr 123 --auto-merge
+
+# 单独 merge 命令
+python -m codereview.cli merge --pr 123 --dry-run
+
+# 强制合并（跳过条件检查）
+python -m codereview.cli merge --pr 123 --force
+```
+
+**🆕 新增特性：**
+- 🔄 `review --auto-merge` 一体化命令
+- 💪 `--force` 跳过条件强制合并
+- 📊 实时进度显示
+
+**[→ 自动合并完整指南](./docs/auto-merge.md)**
+
+### 📦 缓存优化 - Patch 规范化
+
+相同逻辑的代码（仅格式变化）不会重复消耗 LLM token。
+
+**[→ 缓存机制详解](./docs/cache.md)**
+
+### 📝 自定义提示词
+
+支持自定义 system prompt，满足团队特定审查标准。
+
+**[→ 配置详解](./docs/configuration.md)**
 
 ---
 
