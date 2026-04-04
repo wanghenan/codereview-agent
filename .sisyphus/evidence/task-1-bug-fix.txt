@@ -1,0 +1,63 @@
+# Task 1: Bug Fix Evidence
+
+## Bug Description
+Bug at cli.py:491 and cli.py:1262 - `preview.get("files", []) > 5` compares a list to an integer, causing:
+`TypeError: '>' not supported between 'list' and 'int'`
+
+## Root Cause
+The code was directly comparing a list object to the integer 5 instead of using `len()` to get the list length.
+
+## Files Modified
+1. `python/src/codereview/cli.py` - Fixed both occurrences
+
+## Changes Made
+
+### Fix 1 (line ~490)
+**Before:**
+```python
+if preview.get("files", []) > 5:
+```
+**After:**
+```python
+if len(preview.get("files", [])) > 5:
+```
+
+### Fix 2 (line ~1262)
+**Before:**
+```python
+if preview.get("files", []) > 5:
+```
+**After:**
+```python
+if len(preview.get("files", [])) > 5:
+```
+
+## Similar Pattern Search
+Searched cli.py for `\.get\([^)]+\)\s*(>|<|>=|<=|==|!=)\s*\d+` pattern:
+- Line 917: `result.get("applied", 0) > 0` - OK (comparing int to int, default is int)
+- Line 1036: `result.get("applied", 0) > 0` - OK (same, not a bug)
+- Line 1262: `preview.get("files", []) > 5` - FIXED (same bug as line 491)
+
+## Test File Created
+`python/tests/test_cli_bug_fix.py` - 5 test cases covering:
+1. `test_preview_files_list_comparison_bug` - Verifies the buggy pattern raises TypeError
+2. `test_preview_files_list_comparison_fix` - Verifies the fix works
+3. `test_preview_files_5_or_fewer` - Edge case: exactly 5 files
+4. `test_preview_files_empty` - Edge case: empty list
+5. `test_preview_files_missing_key` - Edge case: missing key defaults to []
+
+## Verification
+```
+pytest tests/test_cli_bug_fix.py -v
+============================= test session starts ==============================
+collected 5 items
+tests/test_cli_bug_fix.py::TestCLIBugFixes::test_preview_files_list_comparison_bug PASSED
+tests/test_cli_bug_fix.py::TestCLIBugFixes::test_preview_files_list_comparison_fix PASSED
+tests/test_cli_bug_fix.py::TestCLIBugFixes::test_preview_files_5_or_fewer PASSED
+tests/test_cli_bug_fix.py::TestCLIBugFixes::test_preview_files_empty PASSED
+tests/test_cli_bug_fix.py::TestCLIBugFixes::test_preview_files_missing_key PASSED
+============================== 5 passed in 0.01s
+```
+
+## Note on Pre-existing LSP Errors
+The LSP errors shown in cli.py are pre-existing type annotation issues unrelated to this bug fix. They involve complex generic type inference for dynamically loaded classes (VersionDetector, CodeFixer, etc.) and are not caused by the len() addition.

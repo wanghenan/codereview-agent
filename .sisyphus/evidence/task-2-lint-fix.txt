@@ -1,0 +1,1505 @@
+F401 `codereview.rules.RuleEngine` imported but unused; consider using `importlib.util.find_spec` to test for availability
+  --> python/src/codereview/agents/reviewer.py:34:34
+   |
+32 | # Try to import rule engine
+33 | try:
+34 |     from codereview.rules import RuleEngine, create_rule_engine
+   |                                  ^^^^^^^^^^
+35 |
+36 |     RULES_AVAILABLE = True
+   |
+help: Remove unused import
+
+F401 `codereview.rules.create_rule_engine` imported but unused; consider using `importlib.util.find_spec` to test for availability
+  --> python/src/codereview/agents/reviewer.py:34:46
+   |
+32 | # Try to import rule engine
+33 | try:
+34 |     from codereview.rules import RuleEngine, create_rule_engine
+   |                                              ^^^^^^^^^^^^^^^^^^
+35 |
+36 |     RULES_AVAILABLE = True
+   |
+help: Remove unused import
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:107:22
+    |
+105 |         llm: Any,
+106 |         project_context: ProjectContext,
+107 |         rule_engine: Optional[Any] = None,
+    |                      ^^^^^^^^^^^^^
+108 |         file_cache: Optional[Any] = None,
+109 |         max_concurrency: int = 5,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:108:21
+    |
+106 |         project_context: ProjectContext,
+107 |         rule_engine: Optional[Any] = None,
+108 |         file_cache: Optional[Any] = None,
+    |                     ^^^^^^^^^^^^^
+109 |         max_concurrency: int = 5,
+110 |         timeout_seconds: float = 30.0,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:148:79
+    |
+146 |         total = 0
+147 |
+148 |         async def review_with_semaphore(entry: DiffEntry) -> tuple[DiffEntry, Optional[FileReview]]:
+    |                                                                               ^^^^^^^^^^^^^^^^^^^^
+149 |             nonlocal completed
+150 |             async with semaphore:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:207:10
+    |
+205 |     async def _review_file_with_retry(
+206 |         self, entry: DiffEntry, max_retries: int = 3
+207 |     ) -> Optional[FileReview]:
+    |          ^^^^^^^^^^^^^^^^^^^^
+208 |         """Review a single file with retry logic.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:396:50
+    |
+394 |         return False
+395 |
+396 |     def _detect_language(self, filename: str) -> Optional[str]:
+    |                                                  ^^^^^^^^^^^^^
+397 |         """Detect programming language from file extension.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:467:22
+    |
+465 |         config: Config,
+466 |         llm: Any,
+467 |         rule_engine: Optional[Any] = None,
+    |                      ^^^^^^^^^^^^^
+468 |         file_cache: Optional[Any] = None,
+469 |     ):
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/agents/reviewer.py:468:21
+    |
+466 |         llm: Any,
+467 |         rule_engine: Optional[Any] = None,
+468 |         file_cache: Optional[Any] = None,
+    |                     ^^^^^^^^^^^^^
+469 |     ):
+470 |         """Initialize orchestrator.
+    |
+help: Convert to `X | None`
+
+F841 Local variable `new_start` is assigned to but never used
+   --> python/src/codereview/cli.py:125:17
+    |
+123 |             match = re.search(r"@@\+.*(\d+)(?:,(\d+))? -(\d+)(?:,(\d+))? @@", line)
+124 |             if match:
+125 |                 new_start = int(match.group(1))
+    |                 ^^^^^^^^^
+126 |                 new_count = int(match.group(2) or 1)
+127 |                 old_start = int(match.group(3))
+    |
+help: Remove assignment to unused variable `new_start`
+
+F841 Local variable `old_start` is assigned to but never used
+   --> python/src/codereview/cli.py:127:17
+    |
+125 |                 new_start = int(match.group(1))
+126 |                 new_count = int(match.group(2) or 1)
+127 |                 old_start = int(match.group(3))
+    |                 ^^^^^^^^^
+128 |                 old_count = int(match.group(4) or 1)
+129 |                 additions += new_count
+    |
+help: Remove assignment to unused variable `old_start`
+
+E741 Ambiguous variable name: `l`
+   --> python/src/codereview/cli.py:947:34
+    |
+946 |                 # Find removed and added lines
+947 |                 removed = [l for l in orig_set - fixed_set if l.strip()][:2]
+    |                                  ^
+948 |                 added = [l for l in fixed_set - orig_set if l.strip()][:2]
+    |
+
+E741 Ambiguous variable name: `l`
+   --> python/src/codereview/cli.py:948:32
+    |
+946 |                 # Find removed and added lines
+947 |                 removed = [l for l in orig_set - fixed_set if l.strip()][:2]
+948 |                 added = [l for l in fixed_set - orig_set if l.strip()][:2]
+    |                                ^
+949 |
+950 |                 for line in removed[:2]:
+    |
+
+F841 Local variable `risk_emoji` is assigned to but never used
+   --> python/src/codereview/cli.py:977:9
+    |
+975 |     print(f"{'=' * 60}")
+976 |     for filepath, file_fixes in fixes_by_file.items():
+977 |         risk_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(file_fixes[0]["risk"], "⚪")
+    |         ^^^^^^^^^^
+978 |         print(f"\n  📄 {filepath} ({len(file_fixes)} fix{'es' if len(file_fixes) > 1 else ''})")
+979 |         for fix in file_fixes:
+    |
+help: Remove assignment to unused variable `risk_emoji`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/auto_merger.py:35:20
+   |
+33 |         message: str,
+34 |         dry_run: bool = False,
+35 |         pr_number: Optional[int] = None,
+   |                    ^^^^^^^^^^^^^
+36 |         merged: bool = False,
+37 |         merge_method: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/auto_merger.py:37:23
+   |
+35 |         pr_number: Optional[int] = None,
+36 |         merged: bool = False,
+37 |         merge_method: Optional[str] = None,
+   |                       ^^^^^^^^^^^^^
+38 |     ):
+39 |         """Initialize merge result.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/auto_merger.py:77:24
+   |
+75 |         self,
+76 |         config: AutoMergeConfig,
+77 |         github_client: Optional[GitHubClient] = None,
+   |                        ^^^^^^^^^^^^^^^^^^^^^^
+78 |         conditions_override: Optional[AutoMergeConditions] = None,
+79 |     ):
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/auto_merger.py:78:30
+   |
+76 |         config: AutoMergeConfig,
+77 |         github_client: Optional[GitHubClient] = None,
+78 |         conditions_override: Optional[AutoMergeConditions] = None,
+   |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+79 |     ):
+80 |         """Initialize auto merger.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:119:27
+    |
+117 |         review_result: ReviewResult,
+118 |         approval_count: int = 0,
+119 |         check_run_status: Optional[list[dict[str, Any]]] = None,
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+120 |     ) -> tuple[bool, str]:
+121 |         """Check if review results meet merge conditions.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:228:27
+    |
+226 |         review_result: ReviewResult,
+227 |         approval_count: int = 0,
+228 |         check_run_status: Optional[list[dict[str, Any]]] = None,
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+229 |     ) -> tuple[bool, str]:
+230 |         """Determine if a PR should be merged.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:264:21
+    |
+262 |         review_result: ReviewResult,
+263 |         pr_number: int,
+264 |         repo_owner: Optional[str] = None,
+    |                     ^^^^^^^^^^^^^
+265 |         repo_name: Optional[str] = None,
+266 |         github_token: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:265:20
+    |
+263 |         pr_number: int,
+264 |         repo_owner: Optional[str] = None,
+265 |         repo_name: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+266 |         github_token: Optional[str] = None,
+267 |         approval_count: int = 0,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:266:23
+    |
+264 |         repo_owner: Optional[str] = None,
+265 |         repo_name: Optional[str] = None,
+266 |         github_token: Optional[str] = None,
+    |                       ^^^^^^^^^^^^^
+267 |         approval_count: int = 0,
+268 |         merge_method: str = "squash",
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:480:21
+    |
+478 |         review_result: ReviewResult,
+479 |         pr_number: int,
+480 |         repo_owner: Optional[str] = None,
+    |                     ^^^^^^^^^^^^^
+481 |         repo_name: Optional[str] = None,
+482 |         github_token: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:481:20
+    |
+479 |         pr_number: int,
+480 |         repo_owner: Optional[str] = None,
+481 |         repo_name: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+482 |         github_token: Optional[str] = None,
+483 |     ) -> dict[str, Any]:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:482:23
+    |
+480 |         repo_owner: Optional[str] = None,
+481 |         repo_name: Optional[str] = None,
+482 |         github_token: Optional[str] = None,
+    |                       ^^^^^^^^^^^^^
+483 |     ) -> dict[str, Any]:
+484 |         """Get a preview of merge eligibility without actually merging.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/auto_merger.py:610:20
+    |
+608 | def create_auto_merger(
+609 |     config: AutoMergeConfig,
+610 |     github_client: Optional[GitHubClient] = None,
+    |                    ^^^^^^^^^^^^^^^^^^^^^^
+611 | ) -> AutoMerger:
+612 |     """Create an AutoMerger instance.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/cache.py:122:49
+    |
+120 |         return self.FILE_CACHE_DIR / f"{safe_filename}.json"
+121 |
+122 |     def get(self, filename: str, patch: str) -> Optional[dict]:
+    |                                                 ^^^^^^^^^^^^^^
+123 |         """Get cached review result for a file.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/cache.py:254:23
+    |
+252 |         return self.CACHE_FILE
+253 |
+254 |     def load(self) -> Optional[ProjectContext]:
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^
+255 |         """Load cached project context if valid.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/cache.py:339:43
+    |
+338 |     @staticmethod
+339 |     def detect_version(root_dir: Path) -> Optional[str]:
+    |                                           ^^^^^^^^^^^^^
+340 |         """Detect project version from config files.
+    |
+help: Convert to `X | None`
+
+F841 Local variable `nesting` is assigned to but never used
+   --> python/src/codereview/core/complexity_scorer.py:297:9
+    |
+295 |         """Fallback regex-based cognitive complexity."""
+296 |         cognitive = 0
+297 |         nesting = 0
+    |         ^^^^^^^
+298 |         lines = code.split("\n")
+    |
+help: Remove assignment to unused variable `nesting`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/fixer.py:119:17
+    |
+118 |     success: bool
+119 |     fixed_code: Optional[str] = None
+    |                 ^^^^^^^^^^^^^
+120 |     error: Optional[str] = None
+121 |     verification_passed: bool = False
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/fixer.py:120:12
+    |
+118 |     success: bool
+119 |     fixed_code: Optional[str] = None
+120 |     error: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+121 |     verification_passed: bool = False
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/fixer.py:284:10
+    |
+282 |         original_code: str,
+283 |         language: str = "python",
+284 |     ) -> Optional[FixSuggestion]:
+    |          ^^^^^^^^^^^^^^^^^^^^^^^
+285 |         """Generate a fix suggestion for an issue.
+    |
+help: Convert to `X | None`
+
+F841 Local variable `best_match` is assigned to but never used
+   --> python/src/codereview/core/fixer.py:391:25
+    |
+389 |                             break
+390 |                     if match:
+391 |                         best_match = i
+    |                         ^^^^^^^^^^
+392 |                         best_index = i
+393 |                         break
+    |
+help: Remove assignment to unused variable `best_match`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/fixer.py:440:20
+    |
+438 |         issues: list[FileIssue],
+439 |         file_contents: dict[str, str],
+440 |         languages: Optional[dict[str, str]] = None,
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^
+441 |     ) -> list[FixSuggestion]:
+442 |         """Generate fix suggestions for multiple issues.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:51:11
+   |
+49 |     author: str
+50 |     url: str
+51 |     body: Optional[str] = None
+   |           ^^^^^^^^^^^^^
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:71:12
+   |
+69 |     additions: int
+70 |     deletions: int
+71 |     patch: Optional[str] = None
+   |            ^^^^^^^^^^^^^
+72 |     previous_filename: Optional[str] = None  # for renamed files
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:72:24
+   |
+70 |     deletions: int
+71 |     patch: Optional[str] = None
+72 |     previous_filename: Optional[str] = None  # for renamed files
+   |                        ^^^^^^^^^^^^^
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:84:21
+   |
+82 |     def __init__(
+83 |         self,
+84 |         repo_owner: Optional[str] = None,
+   |                     ^^^^^^^^^^^^^
+85 |         repo_name: Optional[str] = None,
+86 |         github_token: Optional[str] = None,
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:85:20
+   |
+83 |         self,
+84 |         repo_owner: Optional[str] = None,
+85 |         repo_name: Optional[str] = None,
+   |                    ^^^^^^^^^^^^^
+86 |         github_token: Optional[str] = None,
+87 |     ):
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:86:23
+   |
+84 |         repo_owner: Optional[str] = None,
+85 |         repo_name: Optional[str] = None,
+86 |         github_token: Optional[str] = None,
+   |                       ^^^^^^^^^^^^^
+87 |     ):
+88 |         """Initialize GitHub client.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/github_client.py:98:29
+   |
+96 |         self.repo_owner = repo_owner
+97 |         self.repo_name = repo_name
+98 |         self._gh_available: Optional[bool] = None
+   |                             ^^^^^^^^^^^^^^
+99 |         self._repo_info_cached = False
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:160:44
+    |
+159 |     def _run_gh(
+160 |         self, args: list[str], input_data: Optional[str] = None
+    |                                            ^^^^^^^^^^^^^
+161 |     ) -> subprocess.CompletedProcess:
+162 |         """Run GitHub CLI command.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:538:23
+    |
+536 |         pr_number: int,
+537 |         merge_method: MergeMethod = MergeMethod.SQUASH,
+538 |         commit_title: Optional[str] = None,
+    |                       ^^^^^^^^^^^^^
+539 |         commit_message: Optional[str] = None,
+540 |     ) -> bool:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:539:25
+    |
+537 |         merge_method: MergeMethod = MergeMethod.SQUASH,
+538 |         commit_title: Optional[str] = None,
+539 |         commit_message: Optional[str] = None,
+    |                         ^^^^^^^^^^^^^
+540 |     ) -> bool:
+541 |         """Merge a pull request.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:572:23
+    |
+570 |         pr_number: int,
+571 |         merge_method: MergeMethod,
+572 |         commit_title: Optional[str],
+    |                       ^^^^^^^^^^^^^
+573 |         commit_message: Optional[str],
+574 |     ) -> bool:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:573:25
+    |
+571 |         merge_method: MergeMethod,
+572 |         commit_title: Optional[str],
+573 |         commit_message: Optional[str],
+    |                         ^^^^^^^^^^^^^
+574 |     ) -> bool:
+575 |         """Merge using GitHub CLI."""
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:618:23
+    |
+616 |         pr_number: int,
+617 |         merge_method: MergeMethod,
+618 |         commit_title: Optional[str],
+    |                       ^^^^^^^^^^^^^
+619 |         commit_message: Optional[str],
+620 |     ) -> bool:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:619:25
+    |
+617 |         merge_method: MergeMethod,
+618 |         commit_title: Optional[str],
+619 |         commit_message: Optional[str],
+    |                         ^^^^^^^^^^^^^
+620 |     ) -> bool:
+621 |         """Merge using GitHub API."""
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:727:36
+    |
+726 |     async def get_check_runs(
+727 |         self, pr_number: int, sha: Optional[str] = None
+    |                                    ^^^^^^^^^^^^^
+728 |     ) -> list[dict[str, Any]]:
+729 |         """Get check runs for a PR.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:790:17
+    |
+789 | def create_github_client(
+790 |     repo_owner: Optional[str] = None,
+    |                 ^^^^^^^^^^^^^
+791 |     repo_name: Optional[str] = None,
+792 |     github_token: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:791:16
+    |
+789 | def create_github_client(
+790 |     repo_owner: Optional[str] = None,
+791 |     repo_name: Optional[str] = None,
+    |                ^^^^^^^^^^^^^
+792 |     github_token: Optional[str] = None,
+793 | ) -> GitHubClient:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/github_client.py:792:19
+    |
+790 |     repo_owner: Optional[str] = None,
+791 |     repo_name: Optional[str] = None,
+792 |     github_token: Optional[str] = None,
+    |                   ^^^^^^^^^^^^^
+793 | ) -> GitHubClient:
+794 |     """Create a GitHub client instance.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/history_tracker.py:24:9
+   |
+22 |     """A single review record."""
+23 |
+24 |     id: Optional[int] = None
+   |         ^^^^^^^^^^^^^
+25 |     timestamp: str = ""
+26 |     repo_name: str = ""
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/history_tracker.py:27:16
+   |
+25 |     timestamp: str = ""
+26 |     repo_name: str = ""
+27 |     pr_number: Optional[int] = None
+   |                ^^^^^^^^^^^^^
+28 |     files_reviewed: int = 0
+29 |     total_issues: int = 0
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/history_tracker.py:53:33
+   |
+51 |     """Track and analyze code review history."""
+52 |
+53 |     def __init__(self, db_path: Optional[Path] = None):
+   |                                 ^^^^^^^^^^^^^^
+54 |         """Initialize history tracker.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:115:20
+    |
+113 |         conclusion: str = "",
+114 |         review_summary: str = "",
+115 |         pr_number: Optional[int] = None,
+    |                    ^^^^^^^^^^^^^
+116 |         timestamp: Optional[str] = None,
+117 |     ) -> int:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:116:20
+    |
+114 |         review_summary: str = "",
+115 |         pr_number: Optional[int] = None,
+116 |         timestamp: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+117 |     ) -> int:
+118 |         """Save a review record.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:174:20
+    |
+172 |         self,
+173 |         limit: int = 10,
+174 |         repo_name: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+175 |         file_path: Optional[str] = None,
+176 |         from_date: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:175:20
+    |
+173 |         limit: int = 10,
+174 |         repo_name: Optional[str] = None,
+175 |         file_path: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+176 |         from_date: Optional[str] = None,
+177 |         to_date: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:176:20
+    |
+174 |         repo_name: Optional[str] = None,
+175 |         file_path: Optional[str] = None,
+176 |         from_date: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+177 |         to_date: Optional[str] = None,
+178 |     ) -> list[ReviewRecord]:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:177:18
+    |
+175 |         file_path: Optional[str] = None,
+176 |         from_date: Optional[str] = None,
+177 |         to_date: Optional[str] = None,
+    |                  ^^^^^^^^^^^^^
+178 |     ) -> list[ReviewRecord]:
+179 |         """Get review history.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:237:42
+    |
+235 |         return records
+236 |
+237 |     def get_last_review(self, repo_name: Optional[str] = None) -> Optional[ReviewRecord]:
+    |                                          ^^^^^^^^^^^^^
+238 |         """Get the most recent review.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:237:67
+    |
+235 |         return records
+236 |
+237 |     def get_last_review(self, repo_name: Optional[str] = None) -> Optional[ReviewRecord]:
+    |                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+238 |         """Get the most recent review.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:251:20
+    |
+249 |     def analyze_trends(
+250 |         self,
+251 |         from_date: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+252 |         to_date: Optional[str] = None,
+253 |         period: str = "month",
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:252:18
+    |
+250 |         self,
+251 |         from_date: Optional[str] = None,
+252 |         to_date: Optional[str] = None,
+    |                  ^^^^^^^^^^^^^
+253 |         period: str = "month",
+254 |         repo_name: Optional[str] = None,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:254:20
+    |
+252 |         to_date: Optional[str] = None,
+253 |         period: str = "month",
+254 |         repo_name: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+255 |     ) -> list[TrendData]:
+256 |         """Analyze review trends.
+    |
+help: Convert to `X | None`
+
+W291 Trailing whitespace
+   --> python/src/codereview/core/history_tracker.py:271:19
+    |
+270 |         query = """
+271 |             SELECT 
+    |                   ^
+272 |                 timestamp, repo_name,
+273 |                 COUNT(*) as review_count,
+    |
+help: Remove trailing whitespace
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:340:48
+    |
+338 |         return trends
+339 |
+340 |     def compare_with_previous(self, repo_name: Optional[str] = None) -> dict[str, Any]:
+    |                                                ^^^^^^^^^^^^^
+341 |         """Compare current review with previous.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:377:42
+    |
+376 |     def export_json(
+377 |         self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None
+    |                                          ^^^^^^^^^^^^^
+378 |     ) -> int:
+379 |         """Export review history to JSON.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:377:73
+    |
+376 |     def export_json(
+377 |         self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None
+    |                                                                         ^^^^^^^^^^^^^
+378 |     ) -> int:
+379 |         """Export review history to JSON.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:420:42
+    |
+419 |     def export_csv(
+420 |         self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None
+    |                                          ^^^^^^^^^^^^^
+421 |     ) -> int:
+422 |         """Export review history to CSV.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:420:73
+    |
+419 |     def export_csv(
+420 |         self, filepath: Path, from_date: Optional[str] = None, to_date: Optional[str] = None
+    |                                                                         ^^^^^^^^^^^^^
+421 |     ) -> int:
+422 |         """Export review history to CSV.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:475:41
+    |
+473 |         return len(records)
+474 |
+475 |     def get_statistics(self, repo_name: Optional[str] = None) -> dict[str, Any]:
+    |                                         ^^^^^^^^^^^^^
+476 |         """Get overall statistics.
+    |
+help: Convert to `X | None`
+
+W291 Trailing whitespace
+   --> python/src/codereview/core/history_tracker.py:488:19
+    |
+487 |         query = """
+488 |             SELECT 
+    |                   ^
+489 |                 COUNT(*) as total_reviews,
+490 |                 SUM(total_issues) as total_issues,
+    |
+help: Remove trailing whitespace
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:518:20
+    |
+516 |     def format_trend_report(
+517 |         self,
+518 |         from_date: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+519 |         to_date: Optional[str] = None,
+520 |         period: str = "month",
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:519:18
+    |
+517 |         self,
+518 |         from_date: Optional[str] = None,
+519 |         to_date: Optional[str] = None,
+    |                  ^^^^^^^^^^^^^
+520 |         period: str = "month",
+521 |     ) -> str:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/history_tracker.py:576:29
+    |
+575 | # CLI helper function
+576 | def create_tracker(db_path: Optional[Path] = None) -> HistoryTracker:
+    |                             ^^^^^^^^^^^^^^
+577 |     """Create a HistoryTracker instance.
+    |
+help: Convert to `X | None`
+
+F401 `typing.Any` imported but unused
+  --> python/src/codereview/core/languages/__init__.py:13:20
+   |
+11 | from dataclasses import dataclass, field
+12 | from pathlib import Path
+13 | from typing import Any, Optional
+   |                    ^^^
+14 |
+15 | logger = logging.getLogger(__name__)
+   |
+help: Remove unused import: `typing.Any`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/languages/__init__.py:180:36
+    |
+180 | def get_analyzer(language: str) -> Optional[BaseLanguageAnalyzer]:
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+181 |     """Get an analyzer for the specified language.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/languages/__init__.py:204:40
+    |
+204 | def detect_language(file_path: str) -> Optional[str]:
+    |                                        ^^^^^^^^^^^^^
+205 |     """Detect language from file path.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/languages/__init__.py:244:15
+    |
+242 |     content: str,
+243 |     file_path: str,
+244 |     language: Optional[str] = None,
+    |               ^^^^^^^^^^^^^
+245 | ) -> Optional[LanguageAnalysisResult]:
+246 |     """Analyze a file with language-specific rules.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/languages/__init__.py:245:6
+    |
+243 |     file_path: str,
+244 |     language: Optional[str] = None,
+245 | ) -> Optional[LanguageAnalysisResult]:
+    |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+246 |     """Analyze a file with language-specific rules.
+    |
+help: Convert to `X | None`
+
+E402 Module level import not at top of file
+   --> python/src/codereview/core/languages/__init__.py:272:1
+    |
+271 |   # Import all language analyzers to register them
+272 | / from codereview.core.languages import (
+273 | |     cpp,
+274 | |     csharp,
+275 | |     go,
+276 | |     java,
+277 | |     php,
+278 | |     ruby,
+279 | |     rust,
+280 | | )
+    | |_^
+    |
+
+F401 `codereview.core.languages.cpp` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:273:5
+    |
+271 | # Import all language analyzers to register them
+272 | from codereview.core.languages import (
+273 |     cpp,
+    |     ^^^
+274 |     csharp,
+275 |     go,
+    |
+help: Use an explicit re-export: `cpp as cpp`
+
+F401 `codereview.core.languages.csharp` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:274:5
+    |
+272 | from codereview.core.languages import (
+273 |     cpp,
+274 |     csharp,
+    |     ^^^^^^
+275 |     go,
+276 |     java,
+    |
+help: Use an explicit re-export: `csharp as csharp`
+
+F401 `codereview.core.languages.go` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:275:5
+    |
+273 |     cpp,
+274 |     csharp,
+275 |     go,
+    |     ^^
+276 |     java,
+277 |     php,
+    |
+help: Use an explicit re-export: `go as go`
+
+F401 `codereview.core.languages.java` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:276:5
+    |
+274 |     csharp,
+275 |     go,
+276 |     java,
+    |     ^^^^
+277 |     php,
+278 |     ruby,
+    |
+help: Use an explicit re-export: `java as java`
+
+F401 `codereview.core.languages.php` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:277:5
+    |
+275 |     go,
+276 |     java,
+277 |     php,
+    |     ^^^
+278 |     ruby,
+279 |     rust,
+    |
+help: Use an explicit re-export: `php as php`
+
+F401 `codereview.core.languages.ruby` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:278:5
+    |
+276 |     java,
+277 |     php,
+278 |     ruby,
+    |     ^^^^
+279 |     rust,
+280 | )
+    |
+help: Use an explicit re-export: `ruby as ruby`
+
+F401 `codereview.core.languages.rust` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+   --> python/src/codereview/core/languages/__init__.py:279:5
+    |
+277 |     php,
+278 |     ruby,
+279 |     rust,
+    |     ^^^^
+280 | )
+    |
+help: Use an explicit re-export: `rust as rust`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/languages/__init__.py:319:17
+    |
+317 | def analyze_directory(
+318 |     directory: Path,
+319 |     extensions: Optional[list[str]] = None,
+    |                 ^^^^^^^^^^^^^^^^^^^
+320 |     exclude_patterns: Optional[list[str]] = None,
+321 |     max_workers: int = 4,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/languages/__init__.py:320:23
+    |
+318 |     directory: Path,
+319 |     extensions: Optional[list[str]] = None,
+320 |     exclude_patterns: Optional[list[str]] = None,
+    |                       ^^^^^^^^^^^^^^^^^^^
+321 |     max_workers: int = 4,
+322 | ) -> list[LanguageAnalysisResult]:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/report_generator.py:70:29
+   |
+68 |         """
+69 |         self.project_name = project_name
+70 |         self._chart_buffer: Optional[BytesIO] = None
+   |                             ^^^^^^^^^^^^^^^^^
+71 |
+72 |     def generate_html_report(
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/report_generator.py:75:20
+   |
+73 |         self,
+74 |         result: ReviewResult,
+75 |         pr_number: Optional[int] = None,
+   |                    ^^^^^^^^^^^^^
+76 |         trend_data: Optional[TrendData] = None,
+77 |     ) -> str:
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/core/report_generator.py:76:21
+   |
+74 |         result: ReviewResult,
+75 |         pr_number: Optional[int] = None,
+76 |         trend_data: Optional[TrendData] = None,
+   |                     ^^^^^^^^^^^^^^^^^^^
+77 |     ) -> str:
+78 |         """Generate a comprehensive HTML report.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:116:20
+    |
+114 |         self,
+115 |         result: ReviewResult,
+116 |         pr_number: Optional[int] = None,
+    |                    ^^^^^^^^^^^^^
+117 |         trend_data: Optional[TrendData] = None,
+118 |     ) -> str:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:117:21
+    |
+115 |         result: ReviewResult,
+116 |         pr_number: Optional[int] = None,
+117 |         trend_data: Optional[TrendData] = None,
+    |                     ^^^^^^^^^^^^^^^^^^^
+118 |     ) -> str:
+119 |         """Generate an enhanced Markdown report.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:313:20
+    |
+311 |         result: ReviewResult,
+312 |         output_path: str | Path,
+313 |         pr_number: Optional[int] = None,
+    |                    ^^^^^^^^^^^^^
+314 |         trend_data: Optional[TrendData] = None,
+315 |     ) -> Path:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:314:21
+    |
+312 |         output_path: str | Path,
+313 |         pr_number: Optional[int] = None,
+314 |         trend_data: Optional[TrendData] = None,
+    |                     ^^^^^^^^^^^^^^^^^^^
+315 |     ) -> Path:
+316 |         """Save HTML report to file.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:337:20
+    |
+335 |         result: ReviewResult,
+336 |         output_path: str | Path,
+337 |         pr_number: Optional[int] = None,
+    |                    ^^^^^^^^^^^^^
+338 |         trend_data: Optional[TrendData] = None,
+339 |     ) -> Path:
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:338:21
+    |
+336 |         output_path: str | Path,
+337 |         pr_number: Optional[int] = None,
+338 |         trend_data: Optional[TrendData] = None,
+    |                     ^^^^^^^^^^^^^^^^^^^
+339 |     ) -> Path:
+340 |         """Save Markdown report to file.
+    |
+help: Convert to `X | None`
+
+E741 Ambiguous variable name: `l`
+   --> python/src/codereview/core/report_generator.py:445:35
+    |
+444 |         # Filter out zero values
+445 |         non_zero = [(l, s, c) for l, s, c in zip(labels, sizes, colors) if s > 0]
+    |                                   ^
+446 |         if not non_zero:
+447 |             return ""
+    |
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/report_generator.py:570:20
+    |
+568 |         result: ReviewResult,
+569 |         stats: dict[str, Any],
+570 |         pr_number: Optional[int],
+    |                    ^^^^^^^^^^^^^
+571 |         pie_chart: str,
+572 |         bar_chart: str,
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/team_insights.py:137:34
+    |
+135 |     }
+136 |
+137 |     def __init__(self, data_dir: Optional[str] = None):
+    |                                  ^^^^^^^^^^^^^
+138 |         """Initialize TeamInsights.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/team_insights.py:154:20
+    |
+152 |         issues: list[dict[str, Any]],
+153 |         confidence: float,
+154 |         timestamp: Optional[str] = None,
+    |                    ^^^^^^^^^^^^^
+155 |     ) -> None:
+156 |         """Add a review result to the insights data.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/team_insights.py:200:39
+    |
+198 |             logger.error(f"Failed to parse JSON: {e}")
+199 |
+200 |     def save_to_json(self, json_path: Optional[str] = None) -> str:
+    |                                       ^^^^^^^^^^^^^
+201 |         """Save reviews to a JSON file.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/core/team_insights.py:558:36
+    |
+558 | def create_team_insights(data_dir: Optional[str] = None) -> TeamInsights:
+    |                                    ^^^^^^^^^^^^^
+559 |     """Factory function to create a TeamInsights instance.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:42:18
+   |
+41 |     file_path: str
+42 |     line_number: Optional[int] = None
+   |                  ^^^^^^^^^^^^^
+43 |     risk_level: RiskLevel
+44 |     description: str
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:45:17
+   |
+43 |     risk_level: RiskLevel
+44 |     description: str
+45 |     suggestion: Optional[str] = None
+   |                 ^^^^^^^^^^^^^
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:71:17
+   |
+69 |     files_reviewed: list[FileReview]
+70 |     summary: str
+71 |     cache_info: Optional[CacheInfo] = None
+   |                 ^^^^^^^^^^^^^^^^^^^
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:78:22
+   |
+77 |     used_cache: bool
+78 |     cache_timestamp: Optional[str] = None
+   |                      ^^^^^^^^^^^^^
+79 |     cache_version: Optional[str] = None
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:79:20
+   |
+77 |     used_cache: bool
+78 |     cache_timestamp: Optional[str] = None
+79 |     cache_version: Optional[str] = None
+   |                    ^^^^^^^^^^^^^
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:86:15
+   |
+85 |     tech_stack: list[str] = Field(default_factory=list)
+86 |     language: Optional[str] = None
+   |               ^^^^^^^^^^^^^
+87 |     frameworks: list[str] = Field(default_factory=list)
+88 |     dependencies: dict[str, str] = Field(default_factory=dict)
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:90:17
+   |
+88 |     dependencies: dict[str, str] = Field(default_factory=dict)
+89 |     critical_paths: list[str] = Field(default_factory=list)
+90 |     code_style: Optional[str] = None
+   |                 ^^^^^^^^^^^^^
+91 |     directory_structure: Optional[str] = None
+92 |     linter_config: Optional[dict] = None
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:91:26
+   |
+89 |     critical_paths: list[str] = Field(default_factory=list)
+90 |     code_style: Optional[str] = None
+91 |     directory_structure: Optional[str] = None
+   |                          ^^^^^^^^^^^^^
+92 |     linter_config: Optional[dict] = None
+93 |     version: str = Field(default="1.0.0")
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/models/__init__.py:92:20
+   |
+90 |     code_style: Optional[str] = None
+91 |     directory_structure: Optional[str] = None
+92 |     linter_config: Optional[dict] = None
+   |                    ^^^^^^^^^^^^^^
+93 |     version: str = Field(default="1.0.0")
+94 |     analyzed_at: str
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/models/__init__.py:102:12
+    |
+100 |     provider: LLMProvider
+101 |     api_key: str
+102 |     model: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+103 |     base_url: Optional[str] = None
+104 |     temperature: float = 0.7
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/models/__init__.py:103:15
+    |
+101 |     api_key: str
+102 |     model: Optional[str] = None
+103 |     base_url: Optional[str] = None
+    |               ^^^^^^^^^^^^^
+104 |     temperature: float = 0.7
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/models/__init__.py:156:25
+    |
+154 |     exclude_patterns: list[str] = Field(default_factory=list)
+155 |     cache: ConfigCache = Field(default_factory=ConfigCache)
+156 |     custom_prompt_path: Optional[str] = None
+    |                         ^^^^^^^^^^^^^
+157 |     output: OutputConfig = Field(default_factory=OutputConfig)
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/models/__init__.py:167:12
+    |
+165 |     additions: int = 0
+166 |     deletions: int = 0
+167 |     patch: Optional[str] = None
+    |            ^^^^^^^^^^^^^
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/rules/__init__.py:27:15
+   |
+25 |     description: str
+26 |     suggestion: str
+27 |     language: Optional[str] = None  # Language-specific, None for all
+   |               ^^^^^^^^^^^^^
+28 |
+29 |     def __post_init__(self):
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/rules/__init__.py:72:35
+   |
+70 |     DEFAULT_RULES_DIR = Path(__file__).parent
+71 |
+72 |     def __init__(self, rules_dir: Optional[Path] = None, custom_rules: Optional[list] = None):
+   |                                   ^^^^^^^^^^^^^^
+73 |         """Initialize rule engine.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+  --> python/src/codereview/rules/__init__.py:72:72
+   |
+70 |     DEFAULT_RULES_DIR = Path(__file__).parent
+71 |
+72 |     def __init__(self, rules_dir: Optional[Path] = None, custom_rules: Optional[list] = None):
+   |                                                                        ^^^^^^^^^^^^^^
+73 |         """Initialize rule engine.
+   |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/rules/__init__.py:150:39
+    |
+149 |     def detect(
+150 |         self, content: str, language: Optional[str] = None, file_path: Optional[str] = None
+    |                                       ^^^^^^^^^^^^^
+151 |     ) -> list[dict]:
+152 |         """Detect risks in code content.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/rules/__init__.py:150:72
+    |
+149 |     def detect(
+150 |         self, content: str, language: Optional[str] = None, file_path: Optional[str] = None
+    |                                                                        ^^^^^^^^^^^^^
+151 |     ) -> list[dict]:
+152 |         """Detect risks in code content.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/rules/__init__.py:174:59
+    |
+172 |         return issues
+173 |
+174 |     def detect_in_diff(self, diff_content: str, language: Optional[str] = None) -> list[dict]:
+    |                                                           ^^^^^^^^^^^^^
+175 |         """Detect risks in diff content.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/rules/__init__.py:210:47
+    |
+208 |         return [r for r in self.rules if r.severity == severity]
+209 |
+210 |     def get_rule_by_id(self, rule_id: str) -> Optional[DetectionRule]:
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^
+211 |         """Get a specific rule by ID.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/rules/__init__.py:226:16
+    |
+225 | def create_rule_engine(
+226 |     rules_dir: Optional[Path] = None, custom_rules: Optional[list] = None
+    |                ^^^^^^^^^^^^^^
+227 | ) -> RuleEngine:
+228 |     """Create a rule engine instance.
+    |
+help: Convert to `X | None`
+
+UP045 Use `X | None` for type annotations
+   --> python/src/codereview/rules/__init__.py:226:53
+    |
+225 | def create_rule_engine(
+226 |     rules_dir: Optional[Path] = None, custom_rules: Optional[list] = None
+    |                                                     ^^^^^^^^^^^^^^
+227 | ) -> RuleEngine:
+228 |     """Create a rule engine instance.
+    |
+help: Convert to `X | None`
+
+Found 131 errors.
+No fixes available (117 hidden fixes can be enabled with the `--unsafe-fixes` option).

@@ -1,0 +1,76 @@
+{
+  "active_plan": "/Users/lu.gao/.openclaw/workspace/codereview-agent/.sisyphus/plans/comprehensive-improvement.md",
+  "started_at": "2026-04-03T06:58:44.905Z",
+  "session_ids": [
+    "ses_2ae26ee30ffeJzp0FXwxAhKt1x",
+    "ses_2addbd72bffeZuMSoR4Fz0uao1",
+    "ses_2addba41fffe8MiB2texIkvXxs",
+    "ses_2addc1254ffeAEugB0FDh5IJXn",
+    "ses_2ad9a9cbbffeP1hi3zButC9hOM",
+    "ses_2ad911d6effevBDnvA0o9MlWTu",
+    "ses_2ad8b274cffecZW0jrsDmfI7BJ",
+    "ses_2ad64e4a3ffe6JdWJu90zCpPvi",
+    "ses_2ad59baecffenWay3oT5KtOpKm",
+    "ses_2ad59fa3affeUZ96ADOrAXatFP",
+    "ses_2ad50381dffeeHJzgb07EAcQSs",
+    "ses_2ad505b1bffeX1aA2n7ubamivV",
+    "ses_2ad507ad3ffe72Xl8W253ReeM8",
+    "ses_2ad509dbfffe3HqB4tAoN9cBDr",
+    "ses_2acf88b60ffeqV5XAl3YR43mN9",
+    "ses_2acefbdceffeTBkDORl3hntu3S",
+    "ses_2ace4a2aaffeSwiatP5FqL4RfW",
+    "ses_2ace4bd9dffenEGcyRkSHdxcqi",
+    "ses_2acdd9275ffeBMtk4nGC2teAP4",
+    "ses_2acdd5ea0ffebBrz47zj6IUtUT",
+    "ses_2acddbe00ffei0Jeq42WbSGTeP",
+    "ses_2acd5add1ffeYU4zyR3C8BNa1k",
+    "ses_2acd5d5b5ffeR0vPy9nBwyMStK",
+    "ses_2acc289deffe3mApfxVa17ngaw",
+    "ses_2acc2b488ffeaL4URZNUhxKElC",
+    "ses_2acc261e5ffendWJ9xOcAj92mi",
+    "ses_2acc2de30ffe9cqqw3EaNOFTzK",
+    "ses_2aca1413dffe16RuZMGtKVmswS",
+    "ses_2ac6f10c8ffe4wmdC4Sh4DqTHE",
+    "ses_2ac46a02dffeZAYI8JoUBJYhmo"
+  ],
+  "plan_name": "comprehensive-improvement",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "修复确认Bug cli.py:491 (len()缺失)",
+      "session_id": "ses_2addc1254ffeAEugB0FDh5IJXn",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-03T07:04:14.038Z"
+    },
+    "todo:4": {
+      "task_key": "todo:4",
+      "task_label": "4",
+      "task_title": "CLI标志扩展 (--version, --clear-cache, --log-level)",
+      "session_id": "ses_2ad9a9cbbffeP1hi3zButC9hOM",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-03T08:20:27.317Z"
+    },
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "配置灵活化 (max_concurrency, timeout, cache路径, 模型列表)",
+      "session_id": "ses_2ad911d6effevBDnvA0o9MlWTu",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-03T08:26:45.012Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "错误处理改进 (静默失败修复 + 错误上下文 + 原子缓存)",
+      "session_id": "ses_2aca1413dffe16RuZMGtKVmswS",
+      "agent": "Sisyphus-Junior",
+      "category": "writing",
+      "updated_at": "2026-04-03T12:44:21.918Z"
+    }
+  }
+}

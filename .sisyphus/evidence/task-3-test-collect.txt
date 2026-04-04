@@ -1,0 +1,678 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0 -- /Users/lu.gao/.openclaw/workspace/codereview-agent/python/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/lu.gao/.openclaw/workspace/codereview-agent/python
+configfile: pytest.ini
+plugins: mock-3.15.1, asyncio-1.3.0, langsmith-0.7.24, anyio-4.13.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 248 items
+
+<Dir python>
+  <Package tests>
+    <Module test_auto_merger.py>
+      Tests for auto merger module.
+      <Class TestAutoMergerInit>
+        Test AutoMerger initialization.
+        <Function test_default_config>
+          Test AutoMerger with default config.
+        <Function test_enabled_config>
+          Test AutoMerger with enabled config.
+      <Class TestCheckMergeConditions>
+        Test check_merge_conditions method.
+        <Function test_not_enabled>
+          Test when auto merge is not enabled.
+        <Function test_low_confidence>
+          Test when confidence is below threshold.
+        <Function test_high_risk_file>
+          Test when a file has high risk level.
+        <Function test_medium_risk_below_threshold>
+          Test when medium risk is below max severity.
+        <Function test_require_approval_not_met>
+          Test when approval is required but not provided.
+        <Function test_require_approval_met>
+          Test when approval requirement is met.
+        <Function test_all_conditions_met>
+          Test when all conditions are met.
+        <Function test_wrong_conclusion_with_high_confidence_low_risk>
+          Test when conclusion is NEEDS_REVIEW but confidence is high and risk is low.
+      <Class TestFilterByPatterns>
+        Test filter_by_patterns method.
+        <Function test_no_patterns>
+          Test with no file patterns (all files included).
+        <Function test_filter_by_pattern>
+          Test filtering by file patterns.
+        <Function test_multiple_patterns>
+          Test with multiple file patterns.
+      <Class TestMerge>
+        Test merge method.
+        <Function test_not_enabled_returns_early>
+          Test when auto merge is not enabled.
+        <Function test_dry_run_with_mocked_github>
+          Test dry run mode with mocked GitHub client.
+        <Function test_conditions_not_met>
+          Test when merge conditions are not met.
+      <Class TestMergeResult>
+        Test MergeResult class.
+        <Function test_merge_result_creation>
+          Test creating a MergeResult.
+        <Function test_merge_result_repr>
+          Test MergeResult string representation.
+      <Class TestShouldMerge>
+        Test should_merge convenience method.
+        <Function test_should_merge_when_enabled_and_conditions_met>
+          Test should_merge when conditions are met.
+        <Function test_should_merge_when_disabled>
+          Test should_merge when disabled.
+      <Class TestCreateAutoMerger>
+        Test create_auto_merger factory function.
+        <Function test_create_merger>
+          Test creating an auto merger.
+        <Function test_create_merger_with_github_client>
+          Test creating an auto merger with GitHub client.
+    <Module test_cache.py>
+      Tests for cache functionality.
+      <Class TestFileReviewCache>
+        Test FileReviewCache class.
+        <Function test_cache_initialization>
+          Test cache initialization.
+        <Function test_get_file_hash>
+          Test file hash generation.
+        <Function test_save_and_get>
+          Test saving and retrieving cache.
+        <Function test_get_expired_cache>
+          Test getting expired cache returns None.
+        <Function test_get_mismatched_patch>
+          Test cache returns None when patch differs.
+        <Function test_invalidate>
+          Test invalidating single file cache.
+        <Function test_invalidate_all>
+          Test invalidating all caches.
+        <Function test_get_stats>
+          Test cache statistics.
+        <Function test_normalize_patch_removes_whitespace>
+          Test that normalize_patch removes trailing whitespace.
+        <Function test_normalize_patch_removes_duplicates>
+          Test that normalize_patch removes duplicate lines.
+        <Function test_normalize_patch_handles_empty>
+          Test that normalize_patch handles empty patches.
+        <Function test_normalize_patch_keeps_hunk_headers>
+          Test that normalize_patch keeps hunk headers.
+      <Class TestCacheManager>
+        Test CacheManager class.
+        <Function test_cache_manager_init>
+          Test cache manager initialization.
+        <Function test_get_cache_path>
+          Test getting cache path.
+        <Function test_save_and_load>
+          Test saving and loading project context.
+        <Function test_load_no_cache>
+          Test loading when no cache exists.
+        <Function test_invalidate>
+          Test cache invalidation.
+        <Function test_get_cache_info_no_cache>
+          Test getting cache info when no cache exists.
+        <Function test_is_valid>
+          Test cache validity check.
+      <Class TestVersionDetector>
+        Test VersionDetector class.
+        <Function test_detect_version_no_config>
+          Test version detection with no config files.
+        <Function test_detect_version_package_json>
+          Test version detection from package.json.
+        <Function test_detect_version_pyproject_toml>
+          Test version detection from pyproject.toml.
+        <Function test_has_config_changed>
+          Test checking if config has changed.
+    <Module test_cli.py>
+      Tests for CLI functionality.
+      <Class TestCLI>
+        Test CLI functions.
+        <Function test_parse_git_diff_simple>
+          Test parsing simple git diff.
+        <Function test_parse_git_diff_multiple_files>
+          Test parsing diff with multiple files.
+        <Function test_parse_git_diff_empty>
+          Test parsing empty diff.
+        <Function test_parse_diff_json>
+          Test parsing JSON diff input.
+        <Function test_parse_diff_json_with_files_key>
+          Test parsing JSON with files key.
+        <Function test_parse_diff_file_path>
+          Test parsing diff from file path.
+        <Function test_parse_diff_empty_input>
+          Test parsing empty input.
+      <Class TestCLIArgs>
+        Test CLI argument parsing.
+        <Function test_cli_help>
+          Test CLI help output.
+        <Function test_parse_diff_json_invalid>
+          Test parsing invalid JSON.
+      <Class TestGitDiff>
+        Test git diff functionality.
+        <Function test_get_git_diff_success>
+          Test successful git diff retrieval.
+        <Function test_get_git_diff_failure>
+          Test git diff failure handling.
+        <Function test_get_git_diff_with_base_branch>
+          Test git diff with base branch.
+    <Module test_cli_bug_fix.py>
+      Tests for CLI bug fixes.
+      <Class TestCLIBugFixes>
+        Test cases for specific CLI bugs.
+        <Function test_preview_files_list_comparison_bug>
+          Test that comparing preview.get('files', []) directly to int raises TypeError.
+          
+          Bug: cli.py:491 has `preview.get("files", []) > 5` which compares a list
+          to an integer, causing: TypeError: '>' not supported between 'list' and 'int'
+          
+          Fix: Should use `len(preview.get("files", [])) > 5`
+        <Function test_preview_files_list_comparison_fix>
+          Test that len() comparison works correctly for preview files check.
+        <Function test_preview_files_5_or_fewer>
+          Test that exactly 5 files doesn't trigger the 'more files' message.
+        <Function test_preview_files_empty>
+          Test that empty files list is handled correctly.
+        <Function test_preview_files_missing_key>
+          Test that missing 'files' key defaults to empty list.
+    <Module test_complexity_scorer.py>
+      Tests for ComplexityScorer.
+      <Class TestComplexityScorer>
+        Test ComplexityScorer class.
+        <Function test_scorer_creation>
+          Test creating a ComplexityScorer instance.
+        <Function test_factory_function>
+          Test create_complexity_scorer factory function.
+        <Function test_rate_level>
+          Test letter grade conversion.
+      <Class TestCyclomaticComplexity>
+        Test cyclomatic complexity calculation.
+        <Function test_simple_function>
+          Test simple function with no branches.
+        <Function test_function_with_if>
+          Test function with if statement.
+        <Function test_function_with_multiple_branches>
+          Test function with multiple branches.
+      <Class TestCognitiveComplexity>
+        Test cognitive complexity calculation.
+        <Function test_simple_code>
+          Test simple code has low cognitive complexity.
+        <Function test_nested_code>
+          Test nested code has higher cognitive complexity.
+      <Class TestDuplication>
+        Test code duplication detection.
+        <Function test_no_duplication>
+          Test code with no duplication.
+        <Function test_with_duplication>
+          Test code with obvious duplication.
+      <Class TestFunctionLength>
+        Test function length calculation.
+        <Function test_short_function>
+          Test short function.
+        <Function test_long_function>
+          Test long function.
+      <Class TestNestingDepth>
+        Test nesting depth calculation.
+        <Function test_flat_code>
+          Test flat code with no nesting.
+        <Function test_deeply_nested>
+          Test deeply nested code.
+      <Class TestOverallScore>
+        Test overall score calculation.
+        <Function test_simple_code_high_score>
+          Test simple code gets high score.
+        <Function test_complex_code_low_score>
+          Test complex code gets lower score.
+        <Function test_empty_code>
+          Test empty code handling.
+      <Class TestScoreResult>
+        Test ScoreResult dataclass.
+        <Function test_result_structure>
+          Test ScoreResult has all required fields.
+      <Class TestWeights>
+        Test weight configuration.
+        <Function test_weights_sum_to_one>
+          Test weights sum to 1.0.
+        <Function test_all_dimensions_present>
+          Test all 5 dimensions are present.
+      <Class TestAnalyze>
+        Test the analyze method.
+        <Function test_analyze_returns_metrics>
+          Test analyze returns ComplexityMetrics.
+    <Module test_fixer.py>
+      Tests for the Smart Fix module.
+      <Class TestFixType>
+        Tests for FixType enum.
+        <Function test_fix_type_values>
+          Test FixType enum values.
+      <Class TestFixSuggestion>
+        Tests for FixSuggestion dataclass.
+        <Function test_fix_suggestion_creation>
+          Test creating a FixSuggestion.
+        <Function test_to_display_string>
+          Test converting FixSuggestion to display string.
+        <Function test_to_diff>
+          Test generating unified diff.
+      <Class TestCodeFixer>
+        Tests for CodeFixer class.
+        <Function test_fixer_initialization>
+          Test CodeFixer initialization.
+        <Function test_analyze_fix_type_security>
+          Test security fix type detection.
+        <Function test_analyze_fix_type_performance>
+          Test performance fix type detection.
+        <Function test_analyze_fix_type_code_style>
+          Test code style fix type detection.
+        <Function test_analyze_fix_type_bug_fix>
+          Test bug fix type detection.
+        <Function test_analyze_fix_type_best_practice>
+          Test best practice fix type detection.
+        <Function test_analyze_fix_type_general>
+          Test general fix type detection.
+        <Coroutine test_generate_fix_success>
+          Test successful fix generation.
+      <Class TestCodeFixerApplyFix>
+        Tests for CodeFixer.apply_fix method.
+        <Coroutine test_apply_fix_exact_match>
+          Test applying fix with exact code match.
+        <Coroutine test_apply_fix_partial_match>
+          Test applying fix with partial code match.
+        <Coroutine test_apply_fix_no_match>
+          Test applying fix when code doesn't match.
+      <Class TestFixOrchestrator>
+        Tests for FixOrchestrator class.
+        <Function test_orchestrator_initialization>
+          Test FixOrchestrator initialization.
+        <Function test_format_fixes_for_display_empty>
+          Test formatting empty fixes list.
+        <Function test_format_fixes_for_display_with_fixes>
+          Test formatting fixes list.
+      <Class TestIntegration>
+        Integration tests for the fixer module.
+        <Function test_fix_suggestion_full_workflow>
+          Test a full workflow of creating and using a fix suggestion.
+        <Function test_multiple_fix_types>
+          Test that all fix types can be created.
+    <Module test_history_tracker.py>
+      Tests for history_tracker module.
+      <Class TestSaveReview>
+        Tests for save_review method.
+        <Function test_save_review_basic>
+          Test saving a basic review record.
+        <Function test_save_review_with_pr>
+          Test saving a review with PR number.
+        <Function test_save_review_default_timestamp>
+          Test that timestamp defaults to current time.
+      <Class TestGetHistory>
+        Tests for get_history method.
+        <Function test_get_history_empty>
+          Test getting history from empty database.
+        <Function test_get_history_with_records>
+          Test getting history with records.
+        <Function test_get_history_limit>
+          Test history limit parameter.
+        <Function test_get_history_by_repo>
+          Test filtering history by repository.
+        <Function test_get_history_by_date_range>
+          Test filtering history by date range.
+      <Class TestGetLastReview>
+        Tests for get_last_review method.
+        <Function test_get_last_review_exists>
+          Test getting the last review.
+        <Function test_get_last_review_none>
+          Test getting last review when none exist.
+      <Class TestAnalyzeTrends>
+        Tests for analyze_trends method.
+        <Function test_analyze_trends_empty>
+          Test trends with empty database.
+        <Function test_analyze_trends_monthly>
+          Test monthly trend analysis.
+        <Function test_analyze_trends_with_change>
+          Test trend change calculation.
+      <Class TestCompareWithPrevious>
+        Tests for compare_with_previous method.
+        <Function test_compare_insufficient_history>
+          Test comparison with insufficient history.
+        <Function test_compare_with_history>
+          Test comparison with previous review.
+      <Class TestExport>
+        Tests for export methods.
+        <Function test_export_json>
+          Test JSON export.
+        <Function test_export_csv>
+          Test CSV export.
+      <Class TestGetStatistics>
+        Tests for get_statistics method.
+        <Function test_get_statistics_empty>
+          Test statistics with empty database.
+        <Function test_get_statistics_with_data>
+          Test statistics with data.
+      <Class TestFormatTrendReport>
+        Tests for format_trend_report method.
+        <Function test_format_trend_report_empty>
+          Test formatting report with no data.
+        <Function test_format_trend_report_with_data>
+          Test formatting report with data.
+      <Class TestReviewRecord>
+        Tests for ReviewRecord dataclass.
+        <Function test_review_record_creation>
+          Test creating a ReviewRecord.
+      <Class TestTrendData>
+        Tests for TrendData dataclass.
+        <Function test_trend_data_creation>
+          Test creating a TrendData.
+    <Module test_languages.py>
+      Tests for multi-language health check module.
+      <Class TestLanguageDetection>
+        Test language detection from file extensions.
+        <Function test_detect_python>
+          Test Python file detection.
+        <Function test_detect_javascript>
+          Test JavaScript file detection.
+        <Function test_detect_typescript>
+          Test TypeScript file detection.
+        <Function test_detect_go>
+          Test Go file detection.
+        <Function test_detect_java>
+          Test Java file detection.
+        <Function test_detect_rust>
+          Test Rust file detection.
+        <Function test_detect_cpp>
+          Test C++ file detection.
+        <Function test_detect_php>
+          Test PHP file detection.
+        <Function test_detect_ruby>
+          Test Ruby file detection.
+        <Function test_detect_csharp>
+          Test C# file detection.
+        <Function test_unknown_extension>
+          Test unknown file extension.
+      <Class TestSupportedLanguages>
+        Test supported languages listing.
+        <Function test_get_supported_languages>
+          Test getting supported languages.
+      <Class TestGoAnalyzer>
+        Test Go language analyzer.
+        <Function test_get_go_analyzer>
+          Test getting Go analyzer.
+        <Function test_go_rules_exist>
+          Test that Go rules are defined.
+        <Function test_go_analyze_with_issues>
+          Test Go analyzer detects issues.
+        <Function test_go_health_score>
+          Test Go health score calculation.
+      <Class TestJavaAnalyzer>
+        Test Java language analyzer.
+        <Function test_get_java_analyzer>
+          Test getting Java analyzer.
+        <Function test_java_rules_exist>
+          Test that Java rules are defined.
+        <Function test_java_analyze_with_issues>
+          Test Java analyzer detects issues.
+      <Class TestRustAnalyzer>
+        Test Rust language analyzer.
+        <Function test_get_rust_analyzer>
+          Test getting Rust analyzer.
+        <Function test_rust_rules_exist>
+          Test that Rust rules are defined.
+      <Class TestCppAnalyzer>
+        Test C++ language analyzer.
+        <Function test_get_cpp_analyzer>
+          Test getting C++ analyzer.
+        <Function test_cpp_rules_exist>
+          Test that C++ rules are defined.
+      <Class TestPhpAnalyzer>
+        Test PHP language analyzer.
+        <Function test_get_php_analyzer>
+          Test getting PHP analyzer.
+        <Function test_php_rules_exist>
+          Test that PHP rules are defined.
+        <Function test_php_analyze_with_issues>
+          Test PHP analyzer detects issues.
+      <Class TestRubyAnalyzer>
+        Test Ruby language analyzer.
+        <Function test_get_ruby_analyzer>
+          Test getting Ruby analyzer.
+        <Function test_ruby_rules_exist>
+          Test that Ruby rules are defined.
+      <Class TestCSharpAnalyzer>
+        Test C# language analyzer.
+        <Function test_get_csharp_analyzer>
+          Test getting C# analyzer.
+        <Function test_csharp_rules_exist>
+          Test that C# rules are defined.
+      <Class TestLanguageIssue>
+        Test LanguageIssue dataclass.
+        <Function test_create_issue>
+          Test creating a language issue.
+      <Class TestLanguageAnalysisResult>
+        Test LanguageAnalysisResult dataclass.
+        <Function test_create_result>
+          Test creating a language analysis result.
+        <Function test_result_with_issues>
+          Test result with issues.
+    <Module test_output.py>
+      Tests for output generation.
+      <Class TestOutputGenerator>
+        Test OutputGenerator class.
+        <Function test_generator_init>
+          Test output generator initialization.
+        <Function test_generate_markdown>
+          Test markdown generation.
+        <Function test_generate_markdown_with_pr>
+          Test markdown generation with PR number.
+        <Function test_generate_json>
+          Test JSON generation.
+        <Function test_generate_pr_comment>
+          Test PR comment generation.
+        <Function test_generate_pr_comment_success>
+          Test PR comment with success conclusion.
+      <Class TestOutputGeneratorAsync>
+        Test async output generation.
+        <Coroutine test_generate_markdown_output>
+          Test generating markdown output.
+        <Coroutine test_generate_json_output>
+          Test generating JSON output.
+        <Coroutine test_generate_both_formats>
+          Test generating both markdown and JSON.
+      <Class TestMarkdownFormatting>
+        Test markdown output formatting.
+        <Function test_file_table_formatting>
+          Test file table is properly formatted.
+        <Function test_risk_emoji_mapping>
+          Test risk level emoji mapping.
+    <Module test_report_generator.py>
+      Tests for the Visual Report Generator.
+      <Class TestReportGeneratorInit>
+        Test ReportGenerator initialization.
+        <Function test_default_init>
+          Test initialization with defaults.
+        <Function test_custom_project_name>
+          Test initialization with custom project name.
+      <Class TestHTMLReportGeneration>
+        Test HTML report generation.
+        <Function test_generate_html_report_basic>
+          Test basic HTML report generation.
+        <Function test_html_contains_stats>
+          Test that HTML contains statistics.
+        <Function test_html_contains_conclusion>
+          Test that HTML contains conclusion.
+        <Function test_html_with_pr_number>
+          Test HTML generation with PR number.
+        <Function test_html_contains_charts>
+          Test that HTML contains chart placeholders.
+        <Function test_html_responsive_design>
+          Test that HTML has responsive design.
+        <Function test_html_files_table>
+          Test that HTML contains files table.
+        <Function test_html_detailed_issues>
+          Test that HTML contains detailed issues.
+        <Function test_html_clean_result>
+          Test HTML generation with no issues.
+      <Class TestMarkdownReportGeneration>
+        Test Markdown report generation.
+        <Function test_generate_markdown_basic>
+          Test basic Markdown report generation.
+        <Function test_markdown_summary_table>
+          Test Markdown summary table.
+        <Function test_markdown_files_section>
+          Test Markdown files section.
+        <Function test_markdown_detailed_issues>
+          Test Markdown detailed issues section.
+        <Function test_markdown_with_pr>
+          Test Markdown with PR number.
+        <Function test_markdown_risk_emoji>
+          Test Markdown uses correct risk emojis.
+      <Class TestTrendAnalysis>
+        Test trend analysis functionality.
+        <Function test_generate_trend_chart_empty>
+          Test trend chart with empty data.
+        <Function test_generate_trend_chart_single>
+          Test trend chart with single result.
+        <Function test_generate_trend_chart_multiple>
+          Test trend chart with multiple results.
+        <Function test_trend_data_to_dict>
+          Test TrendData serialization.
+        <Function test_generate_trend_by_week>
+          Test trend by week period.
+      <Class TestFileSaving>
+        Test file saving functionality.
+        <Function test_save_html_report>
+          Test saving HTML report to file.
+        <Function test_save_markdown_report>
+          Test saving Markdown report to file.
+        <Function test_save_creates_parent_dirs>
+          Test that save creates parent directories.
+      <Class TestStatistics>
+        Test statistics calculation.
+        <Function test_calculate_stats>
+          Test statistics calculation.
+        <Function test_categorize_issues>
+          Test issue categorization.
+        <Function test_categorize_performance_issues>
+          Test categorization of performance issues.
+      <Class TestCharts>
+        Test chart generation.
+        <Function test_pie_chart_generation>
+          Test pie chart generation.
+        <Function test_bar_chart_generation>
+          Test bar chart generation.
+        <Function test_confidence_gauge>
+          Test confidence gauge generation.
+        <Function test_empty_pie_chart>
+          Test pie chart with no issues.
+        <Function test_trend_chart_with_data>
+          Test trend chart generation.
+      <Class TestHTMLFormatting>
+        Test HTML formatting details.
+        <Function test_html_has_share_button>
+          Test that HTML has share button.
+        <Function test_html_has_collapsible_issues>
+          Test that HTML has collapsible issue sections.
+        <Function test_html_code_highlighting>
+          Test HTML code highlighting classes.
+        <Function test_conclusion_colors>
+          Test conclusion styling.
+      <Class TestEdgeCases>
+        Test edge cases and error handling.
+        <Function test_result_with_no_files>
+          Test handling of result with no files.
+        <Function test_result_with_no_issues>
+          Test handling of result with no issues.
+        <Function test_extreme_confidence_values>
+          Test confidence at boundaries.
+        <Function test_all_risk_levels>
+          Test handling all risk levels.
+      <Class TestIntegration>
+        Integration tests.
+        <Function test_full_workflow>
+          Test complete report generation workflow.
+    <Module test_retry.py>
+      Tests for review retry logic.
+      <Class TestRetryLogic>
+        Test retry logic for review failures.
+        <Function test_retry_initialization>
+          Test that ReviewAgent initializes with retry parameters.
+        <Function test_retry_method_exists>
+          Test that _review_file_with_retry method exists.
+      <Class TestCustomPromptPath>
+        Test custom prompt path functionality.
+        <Function test_default_prompt_used_when_no_custom_path>
+          Test that default prompt is used when custom_prompt_path is None.
+        <Function test_build_prompt_method_exists>
+          Test that _build_prompt method exists and is callable.
+    <Module test_rules.py>
+      Tests for rule engine.
+      <Class TestDetectionRule>
+        Test DetectionRule dataclass.
+        <Function test_rule_creation>
+          Test creating a detection rule.
+        <Function test_rule_match>
+          Test rule matching.
+        <Function test_rule_no_match>
+          Test rule with no matches.
+        <Function test_rule_invalid_regex>
+          Test rule with invalid regex pattern.
+        <Function test_rule_match_with_line_numbers>
+          Test rule match returns correct line numbers.
+      <Class TestRuleEngine>
+        Test RuleEngine class.
+        <Function test_create_rule_engine>
+          Test creating a rule engine.
+        <Function test_detect_in_content>
+          Test detection in content.
+        <Function test_detect_with_language_filter>
+          Test detection with language filter.
+        <Function test_detect_in_diff>
+          Test detection in diff content.
+        <Function test_get_rules_by_severity>
+          Test filtering rules by severity.
+        <Function test_get_rule_by_id>
+          Test getting a specific rule by ID.
+        <Function test_custom_rules>
+          Test loading custom rules.
+    <Module test_team_insights.py>
+      Tests for Team Insights module.
+      <Class TestTeamInsights>
+        Test cases for TeamInsights class.
+        <Function test_create_instance>
+          Test creating a TeamInsights instance.
+        <Function test_factory_function>
+          Test factory function creates correct instance.
+        <Function test_add_review>
+          Test adding a single review.
+        <Function test_collect_insights_empty>
+          Test collecting insights from empty data.
+        <Function test_collect_insights_with_data>
+          Test collecting insights with sample data.
+        <Function test_classify_issue_security>
+          Test issue classification for security issues.
+        <Function test_classify_issue_performance>
+          Test issue classification for performance issues.
+        <Function test_classify_issue_style>
+          Test issue classification for style issues.
+        <Function test_classify_issue_bug>
+          Test issue classification for bug issues.
+        <Function test_classify_issue_other>
+          Test issue classification for uncategorized issues.
+        <Function test_get_top_issues>
+          Test getting top issues.
+        <Function test_get_developer_stats>
+          Test getting developer statistics.
+        <Function test_get_file_stats>
+          Test getting file statistics.
+        <Function test_get_file_stats_by_directory>
+          Test getting directory statistics.
+        <Function test_generate_report>
+          Test generating a comprehensive report.
+        <Function test_generate_report_recommendations>
+          Test that recommendations are generated correctly.
+        <Function test_save_and_load_json>
+          Test saving and loading data from JSON.
+        <Function test_load_from_nonexistent_file>
+          Test loading from nonexistent file doesn't crash.
+        <Function test_empty_report>
+          Test generating report with no data.
+        <Function test_trends_analysis>
+          Test time-based trends analysis.
+
+========================= 248 tests collected in 0.67s =========================

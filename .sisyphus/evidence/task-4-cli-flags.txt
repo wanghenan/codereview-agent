@@ -1,0 +1,30 @@
+=== Final Verification ===
+
+=== pytest tests/test_cli_flags.py -v ===
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0 -- /Users/lu.gao/.openclaw/workspace/codereview-agent/python/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/lu.gao/.openclaw/workspace/codereview-agent/python
+configfile: pytest.ini
+plugins: mock-3.15.1, asyncio-1.3.0, langsmith-0.7.24, anyio-4.13.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 7 items
+
+tests/test_cli_flags.py::TestVersionFlag::test_version_flag_prints_expected_format PASSED [ 14%]
+tests/test_cli_flags.py::TestVersionFlag::test_version_flag_exit_code_zero PASSED [ 28%]
+tests/test_cli_flags.py::TestVersionFlag::test_version_not_affect_other_args PASSED [ 42%]
+tests/test_cli_flags.py::TestClearCacheFlag::test_clear_cache_without_yes_prompts PASSED [ 57%]
+tests/test_cli_flags.py::TestClearCacheFlag::test_clear_cache_with_yes_removes_cache_dir PASSED [ 71%]
+tests/test_cli_flags.py::TestClearCacheFlag::test_clear_cache_with_yes_nonexistent_cache PASSED [ 85%]
+tests/test_cli_flags.py::TestClearCacheFlag::test_clear_cache_yes_requires_clear_cache PASSED [100%]
+
+============================== 7 passed in 0.68s ===============================
+
+=== python -m codereview.cli --version ===
+codereview-agent 0.1.0
+
+=== python -m codereview.cli --clear-cache --yes ===
+Cache directory .codereview-agent/cache has been cleared.
+
+=== ruff check tests/test_cli_flags.py ===
+All checks passed!
