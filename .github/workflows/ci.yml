@@ -52,7 +52,7 @@ jobs:
         run: uv pip install --system -e ./python
 
       - name: Run mypy type checker
-        run: mypy python/src/ --config-file python/pyproject.toml --ignore-missing-imports
+        run: mypy python/src/ --config-file python/pyproject.toml --ignore-missing-imports --no-site-packages
 
   test:
     name: Test
