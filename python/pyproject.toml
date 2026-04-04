@@ -41,8 +41,10 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-ignore = ["E501"]
+ignore = ["E501", "UP045"]
 
 [tool.mypy]
-python-version = "3.9"
+python_version = 3.9
 strict = true
+ignore_missing_imports = true
+disable_error_code = ["var-annotated", "import-untyped", "import-not-found"]

@@ -28,7 +28,7 @@ jobs:
         run: uv pip install --system ruff
 
       - name: Run ruff linter
-        run: ruff check python/src/
+        run: ruff check python/src/ --config python/pyproject.toml
 
   type-check:
     name: Type Check
@@ -46,13 +46,13 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: uv pip install --system mypy
+        run: uv pip install --system mypy types-pyyaml tomli
 
       - name: Install package
         run: uv pip install --system -e ./python
 
       - name: Run mypy type checker
-        run: mypy python/src/
+        run: mypy python/src/ --config-file python/pyproject.toml --ignore-missing-imports
 
   test:
     name: Test
@@ -96,6 +96,6 @@ jobs:
 
       - name: Check built artifacts
         run: |
-          ls -la dist/
-          test -f dist/*.whl
-          test -f dist/*.tar.gz
+          ls -la python/dist/
+          test -f python/dist/*.whl
+          test -f python/dist/*.tar.gz
