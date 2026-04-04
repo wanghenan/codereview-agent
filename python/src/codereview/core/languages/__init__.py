@@ -269,7 +269,7 @@ def analyze_file(
 
 
 # Import all language analyzers to register them
-from codereview.core.languages import (  # noqa: F401,E402
+from codereview.core.languages import (  # noqa: F401,E402,I001
     cpp as cpp,
     csharp as csharp,
     go as go,
