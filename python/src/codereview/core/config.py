@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -63,6 +64,9 @@ class ConfigLoader:
         if not data:
             raise ConfigError("Empty configuration file")
 
+        # Normalize camelCase keys to snake_case
+        data = cls._normalize_keys(data)
+
         # Resolve environment variables
         data = cls._resolve_env_vars(data)
 
@@ -70,6 +74,28 @@ class ConfigLoader:
             return Config(**data)
         except ValidationError as e:
             raise ConfigError(f"Invalid configuration: {e}")
+
+    @classmethod
+    def _to_snake_case(cls, key: str) -> str:
+        """Convert camelCase string to snake_case."""
+        s1 = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
+        return re.sub(r"([a-z\d])([A-Z])", r"\1_\2", s1).lower()
+
+    @classmethod
+    def _normalize_keys(cls, data: dict) -> dict:
+        """Recursively convert camelCase dict keys to snake_case."""
+        result = {}
+        for key, value in data.items():
+            snake_key = cls._to_snake_case(key)
+            if isinstance(value, dict):
+                result[snake_key] = cls._normalize_keys(value)
+            elif isinstance(value, list):
+                result[snake_key] = [
+                    cls._normalize_keys(item) if isinstance(item, dict) else item for item in value
+                ]
+            else:
+                result[snake_key] = value
+        return result
 
     @classmethod
     def _resolve_env_vars(cls, data: dict) -> dict:

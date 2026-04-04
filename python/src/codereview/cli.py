@@ -765,6 +765,24 @@ def main():
                     else:
                         print(f"❌ {merge_result.get('message', 'Merge failed')}")
 
+        # Detect if all files had LLM failures (graceful degradation produced
+        # only error descriptions rather than real review results)
+        if "result" in result and "files_reviewed" in result["result"]:
+            files = result["result"]["files_reviewed"]
+            if files:
+                all_llm_failed = all(
+                    any(
+                        "review failed" in str(issue.get("description", "")).lower()
+                        or "error code" in str(issue.get("description", "")).lower()
+                        for issue in fr.get("issues", [])
+                    )
+                    for fr in files
+                )
+                if all_llm_failed:
+                    if args.json:
+                        print(json.dumps(result, indent=2, ensure_ascii=False))
+                    return EXIT_LLM_ERROR
+
         return 0
 
     except Exception as e:
@@ -882,7 +900,7 @@ async def run_fix(
             # Filter by risk level
             if issue.risk_level.value in [min_risk, "high", "medium"]:
                 if issue.risk_level.value in ("high", "medium") or min_risk == "low":
-                    all_issues.append((file_review.filename, issue))
+                    all_issues.append((file_review.file_path, issue))
 
     if not all_issues:
         return {
