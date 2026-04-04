@@ -5,8 +5,10 @@ schema_version field, and fix_available field.
 """
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 
 from codereview.cli import (
     EXIT_CONFIG_ERROR,
@@ -185,18 +187,39 @@ class TestSemanticExitCodesIntegration:
     """Integration tests for semantic exit codes via subprocess."""
 
     def test_config_error_returns_exit_2(self):
-        result = subprocess.run(
-            [sys.executable, "-m", "codereview.cli", "--diff", '{"files": []}'],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == EXIT_CONFIG_ERROR
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "codereview.cli",
+                    "--config",
+                    os.path.join(tmpdir, "nonexistent_config.yaml"),
+                    "--diff",
+                    '{"files": []}',
+                ],
+                capture_output=True,
+                text=True,
+                cwd=tmpdir,
+            )
+            assert result.returncode == EXIT_CONFIG_ERROR
 
     def test_config_error_stderr_mentions_config(self):
-        result = subprocess.run(
-            [sys.executable, "-m", "codereview.cli", "--diff", '{"files": []}'],
-            capture_output=True,
-            text=True,
-        )
-        stderr_lower = result.stderr.lower()
-        assert "config" in stderr_lower or "validation" in stderr_lower
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = os.path.join(tmpdir, "nonexistent_config.yaml")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "codereview.cli",
+                    "--config",
+                    config_path,
+                    "--diff",
+                    '{"files": []}',
+                ],
+                capture_output=True,
+                text=True,
+                cwd=tmpdir,
+            )
+            stderr_lower = result.stderr.lower()
+            assert "config" in stderr_lower or "validation" in stderr_lower
