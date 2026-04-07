@@ -41,14 +41,17 @@ except ImportError:
     logger.warning("Rule engine not available, skipping static analysis")
 
 
-# State for the review agent
-class ReviewState(dict):
-    """State for code review agent."""
+# State for the review orchestrator graph
+class OrchestratorState(dict):
+    """State for the review orchestrator graph."""
 
     config: Config
     diff_entries: list[DiffEntry]
-    project_context: ProjectContext
-    results: list[FileReview] = []
+    project_context: ProjectContext | None = None
+    file_reviews: list[FileReview] = []
+    conclusion: ReviewConclusion | None = None
+    confidence: float = 0.0
+    summary: str = ""
     review_complete: bool = False
 
 
@@ -94,8 +97,52 @@ Guidelines:
 - HIGH risk: Security vulnerabilities, hardcoded secrets, auth issues, breaking changes
 - MEDIUM risk: Code smells, potential bugs, maintainability issues
 - LOW risk: Style issues, minor improvements
+- risk_level must be exactly "high", "medium", or "low"
+- issues must always be a list (empty [] if no issues)
+- Be strict but fair. Focus on real issues, not style preferences.
 
-Be strict but fair. Focus on real issues, not style preferences."""
+## Examples
+
+### Example 1 - High Risk (SQL Injection)
+Input: A diff adding string concatenation in a SQL query
+Output:
+{{
+    "risk_level": "high",
+    "issues": [
+        {{
+            "line_number": 42,
+            "risk_level": "high",
+            "description": "SQL injection vulnerability: user input directly concatenated into SQL query",
+            "suggestion": "Use parameterized queries: cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))"
+        }}
+    ],
+    "summary": "Critical SQL injection vulnerability found in database query"
+}}
+
+### Example 2 - Medium Risk (Missing Error Handling)
+Input: A diff adding a try block with an empty except
+Output:
+{{
+    "risk_level": "medium",
+    "issues": [
+        {{
+            "line_number": 15,
+            "risk_level": "medium",
+            "description": "Empty except clause silently swallows all exceptions",
+            "suggestion": "Catch specific exceptions and log them: except ValueError as e: logger.error(...)"
+        }}
+    ],
+    "summary": "Poor error handling that may hide runtime issues"
+}}
+
+### Example 3 - Low Risk (Naming Convention)
+Input: A diff with inconsistent variable naming
+Output:
+{{
+    "risk_level": "low",
+    "issues": [],
+    "summary": "Clean change with no significant issues found"
+}}"""
 
 
 class ReviewAgent:
@@ -125,6 +172,9 @@ class ReviewAgent:
         self.file_cache = file_cache
         self.max_concurrency = config.max_concurrency
         self.timeout_seconds = config.timeout_seconds
+
+        # Pre-compute a compact project context summary to reduce token usage
+        self._context_summary = self._build_context_summary()
 
     async def review_files(self, diff_entries: list[DiffEntry]) -> list[FileReview]:
         """Review multiple files with parallel processing.
@@ -257,6 +307,29 @@ class ReviewAgent:
             ],
         )
 
+    def _build_context_summary(self) -> str:
+        """Build a compact project context summary to reduce token usage.
+
+        Instead of sending the full JSON dump of project_context every time,
+        send only the essential fields.
+
+        Returns:
+            Compact context string
+        """
+        ctx = self.project_context
+        parts = []
+
+        if ctx.language:
+            parts.append(f"Language: {ctx.language}")
+        if ctx.tech_stack:
+            parts.append(f"Tech stack: {', '.join(ctx.tech_stack[:5])}")
+        if ctx.frameworks:
+            parts.append(f"Frameworks: {', '.join(ctx.frameworks[:5])}")
+        if ctx.code_style:
+            parts.append(f"Code style: {ctx.code_style}")
+
+        return "\n".join(parts) if parts else "General project"
+
     def _should_exclude(self, filename: str) -> bool:
         """Check if file should be excluded from review."""
         import fnmatch
@@ -294,12 +367,12 @@ class ReviewAgent:
 
         try:
             # Run with timeout
-            result = await asyncio.wait_for(
+            raw_result = await asyncio.wait_for(
                 chain.ainvoke(
                     {
-                        "project_context": json.dumps(self.project_context.model_dump(), indent=2),
-                        "critical_paths": "\n".join(self.project_context.critical_paths),
-                        "exclude_patterns": "\n".join(self.config.exclude_patterns),
+                        "project_context": self._context_summary,
+                        "critical_paths": "\n".join(self.project_context.critical_paths[:10]),
+                        "exclude_patterns": "\n".join(self.config.exclude_patterns[:5]),
                         "static_results": static_results,
                         "filename": entry.filename,
                         "status": entry.status,
@@ -310,6 +383,22 @@ class ReviewAgent:
                 ),
                 timeout=self.timeout_seconds,
             )
+
+            # If JsonOutputParser returned None or invalid, try to repair
+            result = raw_result if isinstance(raw_result, dict) else self._repair_json_output(raw_result)
+
+            if result is None:
+                raise ValueError("Failed to parse LLM output as JSON")
+
+            # Normalize risk_level values
+            raw_risk = result.get("risk_level", "low")
+            if isinstance(raw_risk, str):
+                raw_risk = raw_risk.lower()
+            result["risk_level"] = raw_risk if raw_risk in ("high", "medium", "low") else "low"
+
+            # Ensure issues is a list
+            if not isinstance(result.get("issues"), list):
+                result["issues"] = []
 
             # Parse result into FileReview
             issues = [
@@ -356,6 +445,49 @@ class ReviewAgent:
         except Exception:
             # Re-raise other exceptions so retry logic can handle them
             raise
+
+    @staticmethod
+    def _repair_json_output(raw: Any) -> Optional[dict]:
+        """Try to extract valid JSON from malformed LLM output.
+
+        Handles common cases:
+        - LLM wraps JSON in markdown code blocks
+        - Extra text before/after the JSON
+        - Truncated JSON
+
+        Args:
+            raw: Raw LLM output (may be string, dict, or other)
+
+        Returns:
+            Parsed dict or None if unrepairable
+        """
+        if isinstance(raw, dict):
+            return raw
+
+        text = str(raw) if raw is not None else ""
+        if not text.strip():
+            return None
+
+        # Try to find JSON block in text
+        import re
+
+        # Match markdown code blocks first: ```json ... ``` or ``` ... ```
+        code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+        if code_block:
+            try:
+                return json.loads(code_block.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Match outermost curly braces
+        brace_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        return None
 
     def _build_prompt(self, entry: DiffEntry) -> ChatPromptTemplate:
         """Build prompt for file review.
@@ -429,42 +561,9 @@ class ReviewAgent:
         }
         return language_map.get(ext)
 
-    def create_graph(self) -> StateGraph:
-        """Create LangGraph for review workflow.
-
-        Returns:
-            Compiled LangGraph
-        """
-        workflow = StateGraph(ReviewState)
-
-        # Add nodes
-        workflow.add_node("review_file", self._node_review_file)
-        workflow.add_node("aggregate_results", self._node_aggregate)
-
-        # Set entry point
-        workflow.set_entry_point("review_file")
-
-        # Add edges
-        workflow.add_edge("review_file", "aggregate_results")
-        workflow.add_edge("aggregate_results", END)
-
-        return workflow.compile()
-
-    async def _node_review_file(self, state: ReviewState) -> ReviewState:
-        """Node: Review a single file."""
-        entry = state["diff_entries"][0]  # Process first entry
-        review = await self._review_file(entry)
-        state["results"] = [review]
-        return state
-
-    async def _node_aggregate(self, state: ReviewState) -> ReviewState:
-        """Node: Aggregate results."""
-        state["review_complete"] = True
-        return state
-
 
 class ReviewOrchestrator:
-    """Orchestrate the complete review process."""
+    """Orchestrate the complete review process using LangGraph."""
 
     def __init__(
         self,
@@ -486,19 +585,32 @@ class ReviewOrchestrator:
         self.rule_engine = rule_engine
         self.file_cache = file_cache
 
-    async def run_review(
-        self, diff_entries: list[DiffEntry], project_context: ProjectContext | None = None
-    ) -> ReviewResult:
-        """Run complete review process.
-
-        Args:
-            diff_entries: List of file diffs
-            project_context: Optional pre-analyzed context
+    def create_graph(self) -> StateGraph:
+        """Create LangGraph for the full review workflow.
 
         Returns:
-            Complete review result
+            Compiled LangGraph
         """
-        # Use default context if not provided
+        workflow = StateGraph(OrchestratorState)
+
+        # Add nodes
+        workflow.add_node("prepare_context", self._node_prepare_context)
+        workflow.add_node("review_files", self._node_review_files)
+        workflow.add_node("calculate_result", self._node_calculate_result)
+
+        # Set entry point
+        workflow.set_entry_point("prepare_context")
+
+        # Add edges
+        workflow.add_edge("prepare_context", "review_files")
+        workflow.add_edge("review_files", "calculate_result")
+        workflow.add_edge("calculate_result", END)
+
+        return workflow.compile()
+
+    async def _node_prepare_context(self, state: OrchestratorState) -> dict:
+        """Node: Prepare project context if not provided."""
+        project_context = state.get("project_context")
         if project_context is None:
             from datetime import datetime
 
@@ -508,8 +620,13 @@ class ReviewOrchestrator:
                 critical_paths=self.config.critical_paths,
                 analyzed_at=datetime.now().isoformat(),
             )
+        return {"project_context": project_context}
 
-        # Create review agent with rule engine and file cache
+    async def _node_review_files(self, state: OrchestratorState) -> dict:
+        """Node: Review all diff files."""
+        project_context = state["project_context"]
+        diff_entries = state["diff_entries"]
+
         agent = ReviewAgent(
             self.config,
             self.llm,
@@ -518,20 +635,50 @@ class ReviewOrchestrator:
             file_cache=self.file_cache,
         )
 
-        # Review files
         file_reviews = await agent.review_files(diff_entries)
+        return {"file_reviews": file_reviews}
 
-        # Calculate conclusion and confidence
+    async def _node_calculate_result(self, state: OrchestratorState) -> dict:
+        """Node: Calculate conclusion, confidence, and summary."""
+        file_reviews = state["file_reviews"]
         conclusion, confidence = self._calculate_result(file_reviews)
-
-        # Generate summary
         summary = self._generate_summary(file_reviews)
+        return {
+            "conclusion": conclusion,
+            "confidence": confidence,
+            "summary": summary,
+            "review_complete": True,
+        }
+
+    async def run_review(
+        self, diff_entries: list[DiffEntry], project_context: ProjectContext | None = None
+    ) -> ReviewResult:
+        """Run complete review process using LangGraph.
+
+        Args:
+            diff_entries: List of file diffs
+            project_context: Optional pre-analyzed context
+
+        Returns:
+            Complete review result
+        """
+        graph = self.create_graph()
+
+        initial_state = OrchestratorState(
+            config=self.config,
+            diff_entries=diff_entries,
+            project_context=project_context,
+            file_reviews=[],
+            review_complete=False,
+        )
+
+        result_state = await graph.ainvoke(initial_state)
 
         return ReviewResult(
-            conclusion=conclusion,
-            confidence=confidence,
-            files_reviewed=file_reviews,
-            summary=summary,
+            conclusion=result_state["conclusion"],
+            confidence=result_state["confidence"],
+            files_reviewed=result_state["file_reviews"],
+            summary=result_state["summary"],
         )
 
     def _calculate_result(self, file_reviews: list[FileReview]) -> tuple[ReviewConclusion, float]:

@@ -25,6 +25,7 @@ class AnalyzerState(dict):
 
     config: Config
     root_dir: Path
+    files_info: str = ""
     project_context: ProjectContext | None = None
     analysis_complete: bool = False
 
@@ -69,7 +70,7 @@ class ProjectAnalyzer:
         self.llm = llm
 
     async def analyze(self, root_dir: Path) -> ProjectContext:
-        """Analyze the project.
+        """Analyze the project using LangGraph workflow.
 
         Args:
             root_dir: Project root directory
@@ -77,11 +78,23 @@ class ProjectAnalyzer:
         Returns:
             Project context with analysis results
         """
-        # Collect project files info
-        files_info = self._collect_files_info(root_dir)
+        # Build and run the graph
+        graph = self.create_graph()
 
-        # Use LLM to analyze
-        context = await self._llm_analyze(files_info, root_dir)
+        initial_state = AnalyzerState(
+            config=self.config,
+            root_dir=root_dir,
+            project_context=None,
+            analysis_complete=False,
+        )
+
+        result_state = await graph.ainvoke(initial_state)
+        context = result_state.get("project_context")
+
+        if context is None:
+            # Fallback: run without graph
+            files_info = self._collect_files_info(root_dir)
+            context = await self._llm_analyze(files_info, root_dir)
 
         # Add user-configured critical paths
         context.critical_paths.extend(self.config.critical_paths)
@@ -92,6 +105,9 @@ class ProjectAnalyzer:
     def _collect_files_info(self, root_dir: Path) -> str:
         """Collect basic file information from the project.
 
+        Reads actual config file contents (not just existence) so the LLM
+        can produce meaningful analysis.
+
         Args:
             root_dir: Project root
 
@@ -100,26 +116,31 @@ class ProjectAnalyzer:
         """
         info_parts = []
 
-        # Check for common config files
-        config_files = [
-            "package.json",
-            "pyproject.toml",
-            "requirements.txt",
-            "Cargo.toml",
-            "go.mod",
-            "pom.xml",
-            "tsconfig.json",
-            "next.config.js",
-            "vite.config.ts",
-            ".eslintrc",
-            ".prettierrc",
-            "pyproject.toml",
-        ]
+        # Read actual config file contents for meaningful analysis
+        config_readers = {
+            "package.json": self._read_json_keys,
+            "pyproject.toml": self._read_toml_content,
+            "tsconfig.json": self._read_json_keys,
+            "go.mod": self._read_first_lines,
+            "Cargo.toml": self._read_first_lines,
+            "pom.xml": self._read_first_lines,
+            "requirements.txt": self._read_first_lines,
+            "next.config.js": self._read_first_lines,
+            "vite.config.ts": self._read_first_lines,
+        }
 
-        for cf in config_files:
+        for cf, reader in config_readers.items():
             path = root_dir / cf
             if path.exists():
-                info_parts.append(f"Found: {cf}")
+                content = reader(path)
+                if content:
+                    info_parts.append(f"=== {cf} ===\n{content}")
+
+        # Also check for linter/formatter configs (existence only)
+        for cf in [".eslintrc", ".eslintrc.js", ".eslintrc.json", ".prettierrc", ".prettierrc.js"]:
+            path = root_dir / cf
+            if path.exists():
+                info_parts.append(f"Found linter/formatter: {cf}")
 
         # List top-level directories
         if root_dir.exists():
@@ -127,7 +148,52 @@ class ProjectAnalyzer:
             if dirs:
                 info_parts.append(f"Top-level directories: {', '.join(dirs[:10])}")
 
-        return "\n".join(info_parts) if info_parts else "No config files found"
+        return "\n\n".join(info_parts) if info_parts else "No config files found"
+
+    @staticmethod
+    def _read_json_keys(path: Path) -> str:
+        """Read key fields from a JSON config file."""
+        try:
+            import json as json_mod
+
+            with open(path) as f:
+                data = json_mod.load(f)
+            # Extract only relevant keys
+            keys_to_extract = ["name", "version", "dependencies", "devDependencies", "scripts"]
+            parts = []
+            for key in keys_to_extract:
+                if key in data:
+                    val = data[key]
+                    if isinstance(val, dict):
+                        items = list(val.items())[:15]
+                        parts.append(f"{key}: {json_mod.dumps(dict(items), indent=2)}")
+                    else:
+                        parts.append(f"{key}: {val}")
+            return "\n".join(parts)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _read_toml_content(path: Path) -> str:
+        """Read key sections from a TOML config file."""
+        try:
+            with open(path) as f:
+                content = f.read()
+            # Only include first 40 lines to keep it manageable
+            lines = content.splitlines()[:40]
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _read_first_lines(path: Path, limit: int = 20) -> str:
+        """Read first N lines from a file."""
+        try:
+            with open(path) as f:
+                lines = [line.rstrip() for line in f.readlines()[:limit]]
+            return "\n".join(lines)
+        except Exception:
+            return ""
 
     async def _llm_analyze(self, files_info: str, root_dir: Path) -> ProjectContext:
         """Use LLM to analyze the project.
@@ -198,14 +264,11 @@ class ProjectAnalyzer:
 
         return workflow.compile()
 
-    async def _node_collect_files(self, state: AnalyzerState) -> AnalyzerState:
+    async def _node_collect_files(self, state: AnalyzerState) -> dict:
         """Node: Collect file information."""
-        state["files_info"] = self._collect_files_info(state["root_dir"])
-        return state
+        return {"files_info": self._collect_files_info(state["root_dir"])}
 
-    async def _node_analyze_with_llm(self, state: AnalyzerState) -> AnalyzerState:
+    async def _node_analyze_with_llm(self, state: AnalyzerState) -> dict:
         """Node: Analyze with LLM."""
         context = await self._llm_analyze(state.get("files_info", ""), state["root_dir"])
-        state["project_context"] = context
-        state["analysis_complete"] = True
-        return state
+        return {"project_context": context, "analysis_complete": True}

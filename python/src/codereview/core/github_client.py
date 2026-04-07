@@ -409,35 +409,57 @@ class GitHubClient:
         return self._parse_git_diff(result.stdout)
 
     async def _get_diff_via_api(self, owner: str, repo: str, pr_number: int) -> list[DiffFile]:
-        """Get diff using GitHub API."""
+        """Get diff using GitHub API with pagination support."""
         import urllib.error
         import urllib.request
 
-        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
-        headers = {
-            "Accept": "application/vnd.github.v3+json",
-        }
-        if self.github_token:
-            headers["Authorization"] = f"Bearer {self.github_token}"
+        all_files = []
+        page = 1
+        per_page = 100  # GitHub max per page
 
-        req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=60) as response:
-                files = json.loads(response.read().decode())
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"Failed to get PR #{pr_number} diff: {e.code} {e.reason}")
-
-        return [
-            DiffFile(
-                filename=f["filename"],
-                status=f["status"],
-                additions=f.get("additions", 0),
-                deletions=f.get("deletions", 0),
-                patch=f.get("patch"),
-                previous_filename=f.get("previous_filename"),
+        while True:
+            url = (
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
+                f"?per_page={per_page}&page={page}"
             )
-            for f in files
-        ]
+            headers = {
+                "Accept": "application/vnd.github.v3+json",
+            }
+            if self.github_token:
+                headers["Authorization"] = f"Bearer {self.github_token}"
+
+            req = urllib.request.Request(url, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    page_files = json.loads(response.read().decode())
+            except urllib.error.HTTPError as e:
+                if page == 1:
+                    raise RuntimeError(f"Failed to get PR #{pr_number} diff: {e.code} {e.reason}")
+                # On subsequent pages, stop gracefully
+                break
+
+            if not page_files:
+                break
+
+            for f in page_files:
+                all_files.append(
+                    DiffFile(
+                        filename=f["filename"],
+                        status=f["status"],
+                        additions=f.get("additions", 0),
+                        deletions=f.get("deletions", 0),
+                        patch=f.get("patch"),
+                        previous_filename=f.get("previous_filename"),
+                    )
+                )
+
+            # Stop if we got fewer than per_page results (last page)
+            if len(page_files) < per_page:
+                break
+
+            page += 1
+
+        return all_files
 
     def _parse_git_diff(self, diff_output: str) -> list[DiffFile]:
         """Parse git diff output into DiffFile list.
@@ -766,24 +788,45 @@ class GitHubClient:
     async def _get_check_runs_via_api(
         self, owner: str, repo: str, sha: str
     ) -> list[dict[str, Any]]:
-        """Get check runs using GitHub API."""
+        """Get check runs using GitHub API with pagination."""
         import urllib.error
         import urllib.request
 
-        url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}/check-runs"
-        headers = {
-            "Accept": "application/vnd.github.v3+json",
-        }
-        if self.github_token:
-            headers["Authorization"] = f"Bearer {self.github_token}"
+        all_checks = []
+        page = 1
 
-        req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                data = json.loads(response.read().decode())
-                return data.get("check_runs", [])
-        except urllib.error.HTTPError:
-            return []
+        while True:
+            url = (
+                f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}/check-runs"
+                f"?per_page=100&page={page}"
+            )
+            headers = {
+                "Accept": "application/vnd.github.v3+json",
+            }
+            if self.github_token:
+                headers["Authorization"] = f"Bearer {self.github_token}"
+
+            req = urllib.request.Request(url, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    data = json.loads(response.read().decode())
+                    page_checks = data.get("check_runs", [])
+            except urllib.error.HTTPError:
+                if page == 1:
+                    return []
+                break
+
+            if not page_checks:
+                break
+
+            all_checks.extend(page_checks)
+
+            if len(page_checks) < 100:
+                break
+
+            page += 1
+
+        return all_checks
 
 
 def create_github_client(

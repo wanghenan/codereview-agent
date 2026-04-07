@@ -217,6 +217,24 @@ class _FallbackChainLLM:
             logger.warning(f"Primary provider failed: {primary_error}")
             return self._invoke_fallback_chain(input_, [primary_error])
 
+    async def ainvoke(self, input_: Any) -> Any:
+        """Async invoke LLM with fallback on failure.
+
+        Args:
+            input_: Input to send to LLM
+
+        Returns:
+            LLM response
+
+        Raises:
+            Exception: If primary and all fallbacks fail
+        """
+        try:
+            return await self._primary_llm.ainvoke(input_)
+        except Exception as primary_error:
+            logger.warning(f"Primary provider failed: {primary_error}")
+            return await self._ainvoke_fallback_chain(input_, [primary_error])
+
     def _invoke_fallback_chain(self, input_: Any, prior_errors: list) -> Any:
         """Try fallback providers in sequence.
 
@@ -237,6 +255,34 @@ class _FallbackChainLLM:
             try:
                 fallback_llm = LLMFactory.create(fallback_config)
                 return fallback_llm.invoke(input_)
+            except Exception as fallback_error:
+                prior_errors.append(fallback_error)
+                logger.warning(f"Fallback provider {provider_name} failed: {fallback_error}")
+
+        # All providers failed
+        error_summary = "; ".join(str(e) for e in prior_errors)
+        raise Exception(f"All LLM providers failed: {error_summary}")
+
+    async def _ainvoke_fallback_chain(self, input_: Any, prior_errors: list) -> Any:
+        """Try fallback providers in sequence (async).
+
+        Args:
+            input_: Input to send to LLM
+            prior_errors: List of errors from previous attempts
+
+        Returns:
+            LLM response from first successful fallback
+
+        Raises:
+            Exception: If all providers in chain fail
+        """
+        for i, fallback_config in enumerate(self._fallback_configs):
+            provider_name = fallback_config.provider.value
+            logger.info(f"Trying fallback provider ({i + 1}): {provider_name}")
+
+            try:
+                fallback_llm = LLMFactory.create(fallback_config)
+                return await fallback_llm.ainvoke(input_)
             except Exception as fallback_error:
                 prior_errors.append(fallback_error)
                 logger.warning(f"Fallback provider {provider_name} failed: {fallback_error}")

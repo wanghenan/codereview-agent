@@ -705,6 +705,7 @@ def main():
         result["schema_version"] = SCHEMA_VERSION
 
         # Add fix_available to each issue in review results
+        has_high_risk = False
         if "result" in result and "files_reviewed" in result["result"]:
             for file_review in result["result"]["files_reviewed"]:
                 if "issues" in file_review:
@@ -713,6 +714,8 @@ def main():
                         issue["fix_available"] = (
                             suggestion is not None and len(str(suggestion).strip()) > 0
                         )
+                        if issue.get("risk_level") == "high":
+                            has_high_risk = True
 
         if args.json:
             print(json.dumps(result, indent=2, ensure_ascii=False))
@@ -783,7 +786,11 @@ def main():
                         print(json.dumps(result, indent=2, ensure_ascii=False))
                     return EXIT_LLM_ERROR
 
-        return 0
+        # Return semantic exit code for AI agent consumers
+        if has_high_risk:
+            return EXIT_ISSUES_FOUND
+
+        return EXIT_SUCCESS
 
     except Exception as e:
         return _json_error(e, json_output=args.json)
