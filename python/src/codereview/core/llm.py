@@ -197,6 +197,23 @@ class _FallbackChainLLM:
         """
         self._primary_llm = primary_llm
         self._fallback_configs = fallback_configs[:2]  # Max 2 fallbacks
+        # Lazily-created fallback LLM instances, keyed by chain index, so a
+        # repeatedly-failing primary does not rebuild the network client on
+        # every invoke/ainvoke call.
+        self._fallback_cache: dict[int, Any] = {}
+
+    def _get_fallback_llm(self, idx: int) -> Any:
+        """Return the fallback LLM for ``idx``, creating it once and caching it.
+
+        Args:
+            idx: Index into ``_fallback_configs``.
+
+        Returns:
+            A LangChain chat model instance for the fallback config.
+        """
+        if idx not in self._fallback_cache:
+            self._fallback_cache[idx] = LLMFactory.create(self._fallback_configs[idx])
+        return self._fallback_cache[idx]
 
     def invoke(self, input_: Any) -> Any:
         """Invoke LLM with fallback on failure.
@@ -253,7 +270,7 @@ class _FallbackChainLLM:
             logger.info(f"Trying fallback provider ({i + 1}): {provider_name}")
 
             try:
-                fallback_llm = LLMFactory.create(fallback_config)
+                fallback_llm = self._get_fallback_llm(i)
                 return fallback_llm.invoke(input_)
             except Exception as fallback_error:
                 prior_errors.append(fallback_error)
@@ -281,7 +298,7 @@ class _FallbackChainLLM:
             logger.info(f"Trying fallback provider ({i + 1}): {provider_name}")
 
             try:
-                fallback_llm = LLMFactory.create(fallback_config)
+                fallback_llm = self._get_fallback_llm(i)
                 return await fallback_llm.ainvoke(input_)
             except Exception as fallback_error:
                 prior_errors.append(fallback_error)
