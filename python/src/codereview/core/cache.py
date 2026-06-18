@@ -24,15 +24,24 @@ except ImportError:
 class FileReviewCache:
     """Cache for individual file review results to enable incremental review."""
 
-    def __init__(self, cache_ttl_days: int = 7, cache_dir: str = ".codereview-agent/cache"):
+    def __init__(
+        self,
+        cache_ttl_days: int = 7,
+        cache_dir: str = ".codereview-agent/cache",
+        cache_namespace: str = "default",
+    ):
         """Initialize file review cache.
 
         Args:
             cache_ttl_days: Cache time-to-live in days
             cache_dir: Directory for cache storage
+            cache_namespace: Namespace folded into the cache key so that a
+                change of LLM model or rule-set invalidates stale reviews.
+                Defaults to ``"default"`` for backward compatibility.
         """
         self.cache_ttl_days = cache_ttl_days
         self.cache_dir = Path(cache_dir)
+        self.cache_namespace = cache_namespace
         self.file_cache_dir = self.cache_dir / "file_reviews"
         self._ensure_cache_dir()
 
@@ -104,7 +113,7 @@ class FileReviewCache:
         """
         # Normalize patch for consistent hashing
         normalized_content = self._normalize_patch(content)
-        data = f"{filename}:{normalized_content}"
+        data = f"{self.cache_namespace}:{filename}:{normalized_content}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 
     def _get_cache_path(self, filename: str) -> Path:
@@ -219,7 +228,8 @@ class FileReviewCache:
                     expired += 1
                 else:
                     valid += 1
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Corrupt cache file skipped in stats: {cache_file} ({e})")
                 expired += 1
 
         return {"total": total, "valid": valid, "expired": expired}
@@ -233,6 +243,7 @@ class CacheManager:
         cache_ttl_days: int = 7,
         enable_file_cache: bool = True,
         cache_dir: str = ".codereview-agent/cache",
+        cache_namespace: str = "default",
     ):
         """Initialize cache manager.
 
@@ -240,6 +251,8 @@ class CacheManager:
             cache_ttl_days: Project context cache time-to-live in days
             enable_file_cache: Enable file-level review caching
             cache_dir: Directory for cache storage
+            cache_namespace: Namespace folded into the file-review cache key
+                so model/rule changes invalidate stale reviews.
         """
         self.cache_ttl_days = cache_ttl_days
         self.cache_dir = Path(cache_dir)
@@ -247,7 +260,11 @@ class CacheManager:
         self._ensure_cache_dir()
 
         # Initialize file review cache
-        self.file_cache = FileReviewCache(cache_ttl_days, cache_dir) if enable_file_cache else None
+        self.file_cache = (
+            FileReviewCache(cache_ttl_days, cache_dir, cache_namespace=cache_namespace)
+            if enable_file_cache
+            else None
+        )
 
     def _ensure_cache_dir(self) -> None:
         """Ensure cache directory exists."""
@@ -320,15 +337,16 @@ class CacheManager:
                 with open(self.cache_file) as f:
                     data = json.load(f)
                     version = data.get("version", "unknown")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not read version from cache: {e}")
 
             return {
                 "exists": True,
                 "modified_at": modified.isoformat(),
                 "version": version,
             }
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to read cache info: {e}")
             return {"exists": False}
 
     def is_valid(self) -> bool:
@@ -360,8 +378,8 @@ class VersionDetector:
                 with open(pkg_json) as f:
                     data = json.load(f)
                     return data.get("version")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not read version from package.json: {e}")
 
         # Check pyproject.toml (Python)
         pyproject = root_dir / "pyproject.toml"
@@ -375,8 +393,8 @@ class VersionDetector:
             except ImportError:
                 # tomli not installed, try manual parsing
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not read version from pyproject.toml: {e}")
 
         # Check setup.py, __init__.py version, etc.
         return None
