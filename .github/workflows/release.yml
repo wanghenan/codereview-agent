@@ -1,0 +1,172 @@
+# Automated Release Workflow
+#
+# Triggered by pushing a version tag matching `v*.*.*` (e.g. v1.2.0, v1.2.0-rc1).
+# Pipeline:
+#   verify (ruff + pytest) -> build (wheel + sdist) -> extract CHANGELOG notes
+#   -> create GitHub Release with artifacts attached.
+#
+# Quality gate is self-contained (does not depend on ci.yml timing) because tag
+# pushes do not trigger ci.yml (which only listens on branch pushes).
+#
+# Release notes are the single source of truth from CHANGELOG.md. Pre-release tags
+# (v1.2.0-rc1) are auto-marked as prerelease and excluded from "Latest".
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Avoid concurrent releases for the same tag (e.g. force-pushed tag).
+# cancel-in-progress: false lets an in-flight release finish rather than
+# leaving a half-published Release behind.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install ruff
+        run: uv pip install --system ruff
+
+      - name: Run ruff linter
+        run: ruff check python/src/ --config python/pyproject.toml
+
+      - name: Install package with dev extras
+        run: uv pip install --system -e "./python[dev]"
+
+      - name: Run pytest
+        run: pytest python/tests/ -v --tb=short
+
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    needs: verify
+    permissions:
+      contents: write # required by gh release create
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build package
+        run: |
+          uv pip install --system build
+          cd python && python -m build
+
+      - name: Verify build artifacts
+        run: |
+          ls -la python/dist/
+          sh -c 'test -n "$(ls python/dist/*.whl 2>/dev/null)" && echo "wheel OK"'
+          sh -c 'test -n "$(ls python/dist/*.tar.gz 2>/dev/null)" && echo "sdist OK"'
+
+      - name: Extract version from tag
+        id: version
+        # Strip leading 'v' from tag (v1.2.0 -> 1.2.0) and detect prerelease
+        # (v1.2.0-rc1 has a hyphen after the version number).
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if [[ "$version" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        # Pull the `## [X.Y.Z]` section from CHANGELOG.md. If the section is
+        # missing or empty, fall back to the tag name so the Release never has
+        # blank notes.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          version = os.environ["VERSION"]
+          tag = os.environ["TAG"]
+          try:
+              with open("CHANGELOG.md", encoding="utf-8") as f:
+                  content = f.read()
+          except FileNotFoundError:
+              print(f"::warning::CHANGELOG.md not found; using tag as notes")
+              with open("notes.md", "w", encoding="utf-8") as out:
+                  out.write(f"Release {tag}.\n")
+              sys.exit(0)
+
+          # Match `## [X.Y.Z] ...` header and capture until the next `## [`.
+          pattern = re.compile(
+              r"(^##\s*\[" + re.escape(version) + r"\][^\n]*\n)"
+              r"(.*?)(?=^##\s*\[|\Z)",
+              re.MULTILINE | re.DOTALL,
+          )
+          m = pattern.search(content)
+          if m and m.group(2).strip():
+              notes = m.group(2).strip() + "\n"
+          else:
+              print(f"::warning::No CHANGELOG section for [{version}]; using tag as notes")
+              notes = f"Release {tag}.\n"
+          with open("notes.md", "w", encoding="utf-8") as out:
+              out.write(notes)
+          print("::notice::Extracted notes preview:\n" + notes[:500])
+          PY
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          is_pre="${{ steps.version.outputs.is_prerelease }}"
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+
+          if [ "$is_pre" = "true" ]; then
+            prerelease_flag="--prerelease"
+            title="${tag} (prerelease)"
+          else
+            prerelease_flag="--latest"
+            title="${tag}"
+          fi
+
+          gh release create "$tag" \
+            python/dist/*.whl \
+            python/dist/*.tar.gz \
+            --title "$title" \
+            --notes-file notes.md \
+            $prerelease_flag
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Release ${{ steps.version.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Version: \`${{ steps.version.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Prerelease: \`${{ steps.version.outputs.is_prerelease }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Verify job: ${{ needs.verify.result }}" >> "$GITHUB_STEP_SUMMARY"
