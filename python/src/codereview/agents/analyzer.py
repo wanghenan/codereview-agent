@@ -42,16 +42,16 @@ Analyze the following aspects:
 5. Critical paths (auth, payment, admin, etc.)
 
 Provide your analysis in JSON format with the following structure:
-{
+{{
     "tech_stack": ["language1", "framework1"],
     "language": "primary language",
     "frameworks": ["framework1", "framework2"],
-    "dependencies": {"package1": "version1"},
+    "dependencies": {{"package1": "version1"}},
     "critical_paths": ["src/auth", "src/payment"],
     "code_style": "description of code style",
     "directory_structure": "tree structure description",
-    "linter_config": {"linter": "config"}
-}
+    "linter_config": {{"linter": "config"}}
+}}
 
 Be thorough but concise. Focus on what's relevant for code review."""
 

@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unreachable exception branch in `review_files` replaced with real exception guarding
 - JSON repair regex that silently truncated deeply-nested objects (`{"a":{"b":{"c":1}}}`)
 - `exclude_patterns` directory semantics (e.g. `dist/**` no longer over-matches `distrib/**`)
+- Analyzer system prompt crash on Python <3.12: literal `{}` in the JSON schema example were parsed as nested f-string replacement fields by LangChain's `ChatPromptTemplate`
 
 ## [1.0.0] - 2024-03-08
 
