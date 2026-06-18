@@ -18,6 +18,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph
 from tqdm import tqdm
 
+from codereview.core.path_matcher import ExcludeMatcher
 from codereview.models import (
     Config,
     DiffEntry,
@@ -39,6 +40,52 @@ try:
 except ImportError:
     RULES_AVAILABLE = False
     logger.warning("Rule engine not available, skipping static analysis")
+
+
+def _extract_balanced_object(text: str) -> Optional[str]:
+    """Extract the first balanced ``{...}`` JSON object from ``text``.
+
+    Scans for an opening ``{`` and tracks brace depth to arbitrary nesting,
+    ignoring braces inside string literals (handling ``\\"`` escapes). Returns
+    the substring of the first object whose braces balance, or ``None``.
+
+    Unlike a fixed-depth regex this handles deeply nested objects correctly,
+    e.g. ``{"a":{"b":{"c":1}}}``.
+
+    Args:
+        text: Text that may contain a JSON object.
+
+    Returns:
+        The balanced object substring, or None.
+    """
+    start = -1
+    depth = 0
+    in_string = False
+    escape = False
+
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    return text[start : i + 1]
+
+    return None
 
 
 # State for the review orchestrator graph
@@ -173,6 +220,9 @@ class ReviewAgent:
         self.max_concurrency = config.max_concurrency
         self.timeout_seconds = config.timeout_seconds
 
+        # Pre-compile exclude patterns once (gitignore semantics via pathspec)
+        self._exclude_matcher = ExcludeMatcher(config.exclude_patterns)
+
         # Pre-compute a compact project context summary to reduce token usage
         self._context_summary = self._build_context_summary()
 
@@ -189,19 +239,9 @@ class ReviewAgent:
         semaphore = asyncio.Semaphore(self.max_concurrency)
         max_retries = 3
 
-        # Track progress
-        completed = 0
-        total = 0
-
         async def review_with_semaphore(entry: DiffEntry) -> tuple[DiffEntry, Optional[FileReview]]:
-            nonlocal completed
             async with semaphore:
                 result = await self._review_file_with_retry(entry, max_retries=max_retries)
-                completed += 1
-                # Log progress
-                percent = 100 * completed // total if total > 0 else 0
-                short_name = entry.filename.split("/")[-1] if entry.filename else "unknown"
-                logger.info(f"📊 Reviewing: {completed}/{total} ({percent}%) - {short_name}")
                 return (entry, result)
 
         # Check for cached results first
@@ -226,28 +266,40 @@ class ReviewAgent:
         total = len(tasks)
 
         if tasks:
-            pbar = tqdm(
-                tasks,
+            # tqdm wraps the async iterator from as_completed so the bar
+            # advances exactly once per completion (no double counting).
+            disable = len(tasks) <= 1 or bool(os.getenv("TQDM_DISABLE"))
+            with tqdm(
+                asyncio.as_completed(tasks),
+                total=total,
                 desc="Reviewing",
                 unit="file",
-                disable=len(tasks) <= 1 or bool(os.getenv("TQDM_DISABLE")),
-            )
-            # Use as_completed to process results as they come in
-            for coro in asyncio.as_completed(pbar):
-                entry, review = await coro
-                pbar.update(1)
-                pbar.set_postfix(file=entry.filename[:30] if entry.filename else "unknown")
+                disable=disable,
+            ) as pbar:
+                for coro in pbar:
+                    try:
+                        entry, review = await coro
+                    except Exception as e:
+                        # Defensive: _review_file_with_retry already degrades
+                        # to a FileReview on failure, but guard against any
+                        # exception that escapes it so one bad file cannot
+                        # abort the whole batch.
+                        logger.error(f"Review task failed unexpectedly: {e}")
+                        pbar.update(1)
+                        continue
 
-                if isinstance(review, Exception):
-                    logger.error(f"Review failed for {entry.filename}: {review}")
-                    continue
-                if review:
-                    results.append(review)
+                    pbar.update(1)
+                    short = entry.filename[:30] if entry.filename else "unknown"
+                    pbar.set_postfix(file=short)
 
-                    # Cache the result
-                    if self.file_cache and review.file_path and entry.patch:
-                        self.file_cache.save(review.file_path, entry.patch, review.model_dump())
-            pbar.close()
+                    if review:
+                        results.append(review)
+
+                        # Cache the result
+                        if self.file_cache and review.file_path and entry.patch:
+                            self.file_cache.save(
+                                review.file_path, entry.patch, review.model_dump()
+                            )
 
         # Add cached results
         results.extend(cached_results.values())
@@ -331,13 +383,13 @@ class ReviewAgent:
         return "\n".join(parts) if parts else "General project"
 
     def _should_exclude(self, filename: str) -> bool:
-        """Check if file should be excluded from review."""
-        import fnmatch
+        """Check if file should be excluded from review.
 
-        for pattern in self.config.exclude_patterns:
-            if fnmatch.fnmatch(filename, pattern):
-                return True
-        return False
+        Uses gitignore-style matching (recursive ``**``, ``!`` negation,
+        directory anchoring) so documented patterns like ``dist/**`` and
+        ``node_modules/**`` behave as users expect.
+        """
+        return self._exclude_matcher.matches(filename)
 
     async def _review_file(self, entry: DiffEntry) -> FileReview:
         """Review a single file with timeout handling.
@@ -479,11 +531,15 @@ class ReviewAgent:
             except json.JSONDecodeError:
                 pass
 
-        # Match outermost curly braces
-        brace_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
-        if brace_match:
+        # Extract the outermost balanced JSON object via a brace-counting
+        # scan. The previous regex handled only a single nesting level and
+        # silently truncated deeply-nested objects; the scan below supports
+        # arbitrary depth and respects string literals so braces inside
+        # strings don't confuse the counter.
+        extracted = _extract_balanced_object(text)
+        if extracted is not None:
             try:
-                return json.loads(brace_match.group(0))
+                return json.loads(extracted)
             except json.JSONDecodeError:
                 pass
 

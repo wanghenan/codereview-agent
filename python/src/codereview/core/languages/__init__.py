@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from codereview.core.path_matcher import ExcludeMatcher
+
 logger = logging.getLogger(__name__)
 
 
@@ -331,18 +333,17 @@ def analyze_directory(
     Returns:
         List of analysis results
     """
-    import fnmatch
-
     exclude_patterns = exclude_patterns or []
+    matcher = ExcludeMatcher(exclude_patterns)
     files = []
 
     for file_path in directory.rglob("*"):
         if not file_path.is_file():
             continue
 
-        # Check if file matches exclude patterns
+        # Check if file matches exclude patterns (gitignore semantics)
         file_str = str(file_path)
-        if any(fnmatch.fnmatch(file_str, pattern) for pattern in exclude_patterns):
+        if matcher.matches(file_str):
             continue
 
         # Check extension filter
