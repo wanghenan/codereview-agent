@@ -128,16 +128,16 @@ criticalPaths:
 
 ## 排除规则 (excludePatterns)
 
-使用 glob 模式排除不需要审查的文件：
+使用 **gitignore 语法**排除不需要审查的文件。基于 [`pathspec`](https://github.com/cpburnz/python-pathspec) 实现，支持完整 gitignore 语义。
 
 ```yaml
 excludePatterns:
-  # 测试文件
+  # 测试文件（glob 匹配）
   - "*.test.ts"
   - "*.spec.ts"
   - "*_test.py"
   
-  # 构建产物
+  # 构建产物（递归匹配整个目录）
   - "dist/**"
   - "build/**"
   - "*.min.js"
@@ -150,7 +150,26 @@ excludePatterns:
   # 生成文件
   - "*.pb.go"
   - "generated/**"
+  
+  # 锚定到仓库根目录（前导 /）
+  - "/build/output.js"
+  
+  # 否定：重新纳入先前被排除的文件（前导 !）
+  - "*.md"
+  - "!IMPORTANT.md"
 ```
+
+### 语法说明
+
+| 语法 | 含义 | 示例 |
+|------|------|------|
+| `*` | 匹配任意字符（不含 `/`） | `*.test.py` |
+| `**` | 递归匹配子目录 | `dist/**` |
+| `/` 前缀 | 锚定到仓库根 | `/build/**` |
+| `!` 前缀 | 否定（重新纳入） | `!keep.py` |
+| `dir/` 后缀 | 匹配整个目录树 | `node_modules/` |
+
+> **目录感知**：`dist/**` 不会误匹配 `distrib/**`（区别于旧的 fnmatch 行为）。
 
 ---
 
