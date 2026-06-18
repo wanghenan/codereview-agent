@@ -1,13 +1,8 @@
 """Tests for cache functionality."""
 
-import json
 import tempfile
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 from codereview.core.cache import CacheManager, FileReviewCache, VersionDetector
 
@@ -152,6 +147,86 @@ class TestFileReviewCache:
 """
         norm = self.cache._normalize_patch(patch)
         assert "@@ -1,5 +1,5 @@" in norm
+
+    def test_namespace_affects_cache_key(self):
+        """Different namespaces must produce different cache keys.
+
+        Regression: previously the key depended only on filename + patch, so
+        switching the LLM model or updating rules silently returned a stale
+        review. The namespace (model + rules hash) now folds into the key.
+        """
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cache_a = FileReviewCache(
+                cache_ttl_days=7,
+                cache_dir=str(Path(temp_dir) / "a"),
+                cache_namespace="gpt-4o:r1",
+            )
+            cache_b = FileReviewCache(
+                cache_ttl_days=7,
+                cache_dir=str(Path(temp_dir) / "b"),
+                cache_namespace="glm-4-flash:r1",
+            )
+
+            filename = "src/auth.py"
+            patch = "@@ -1 +1 @@\n+secret = 'x'"
+            result = {"risk_level": "high"}
+
+            cache_a.save(filename, patch, result)
+
+            # Same filename+patch but a different namespace -> no hit.
+            assert cache_b.get(filename, patch) is None
+            # Same namespace -> hit.
+            assert cache_a.get(filename, patch) is not None
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_default_namespace_backward_compat(self):
+        """Omitting cache_namespace keeps the legacy 'default' behavior."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            legacy = FileReviewCache(
+                cache_ttl_days=7,
+                cache_dir=str(Path(temp_dir) / "legacy"),
+            )
+            assert legacy.cache_namespace == "default"
+
+            filename = "lib.py"
+            patch = "@@ -1 +1 @@\n+x = 1"
+            legacy.save(filename, patch, {"risk_level": "low"})
+            # Round-trip works under the default namespace.
+            assert legacy.get(filename, patch) == {"risk_level": "low"}
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_corrupt_cache_file_logs_debug(self, caplog):
+        """A corrupt cache file must be logged at debug (not silently swallowed)."""
+        import logging
+
+        caplog.set_level(logging.DEBUG, logger="codereview.core.cache")
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cache = FileReviewCache(
+                cache_ttl_days=7,
+                cache_dir=str(Path(temp_dir) / "corrupt"),
+            )
+            # Write a corrupt JSON file where a review cache is expected.
+            target = cache.file_cache_dir / "bad.py.json"
+            target.write_text("{ this is not valid json")
+
+            stats = cache.get_stats()
+            # Corrupt file counts as expired, but crucially a debug log emitted.
+            assert stats["total"] == 1
+            assert any("cache" in rec.message.lower() for rec in caplog.records)
+        finally:
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class TestCacheManager:

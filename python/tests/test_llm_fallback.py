@@ -1,7 +1,7 @@
 """Tests for LLM provider fallback chain."""
 
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -316,3 +316,67 @@ class TestLLMFallbackChain:
             )
             result = chain.invoke("test input")
             assert result == "fallback success"
+
+    def test_fallback_llm_cached_across_invocations(self):
+        """A fallback LLM instance is created once and reused.
+
+        Regression test: previously every invoke() rebuilt the fallback client
+        (httpx pool, SDK objects) via LLMFactory.create. After caching, multiple
+        invocations that fall through to the same fallback must call create()
+        exactly once for that fallback index.
+        """
+        primary_llm = MagicMock()
+        # Primary always fails -> fallback always used.
+        primary_llm.invoke.side_effect = Exception("primary down")
+
+        fallback_llm = MagicMock()
+        fallback_llm.invoke.return_value = "fallback success"
+
+        fallback_config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="key",
+            temperature=0.7,
+        )
+
+        with patch.object(LLMFactory, "create", return_value=fallback_llm) as mock_create:
+            chain = _FallbackChainLLM(
+                primary_llm=primary_llm,
+                fallback_configs=[fallback_config],
+            )
+
+            # Invoke three times; each must fall through to the same fallback.
+            for _ in range(3):
+                assert chain.invoke("test input") == "fallback success"
+
+            # create() called once during construction is NOT how this wrapper
+            # works: the wrapper itself is built by create_with_fallback which
+            # pre-creates the primary. Here we constructed the wrapper directly
+            # so create() is only ever called for the fallback, and only once.
+            assert mock_create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_fallback_llm_cached_across_ainvocations(self):
+        """Async path: fallback LLM instance is created once and reused."""
+        primary_llm = MagicMock()
+        primary_llm.ainvoke = AsyncMock(side_effect=Exception("primary down"))
+
+        fallback_llm = MagicMock()
+        fallback_llm.ainvoke = AsyncMock(return_value="fallback success")
+
+        fallback_config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="key",
+            temperature=0.7,
+        )
+
+        with patch.object(LLMFactory, "create", return_value=fallback_llm) as mock_create:
+            chain = _FallbackChainLLM(
+                primary_llm=primary_llm,
+                fallback_configs=[fallback_config],
+            )
+
+            for _ in range(3):
+                result = await chain.ainvoke("test input")
+                assert result == "fallback success"
+
+            assert mock_create.call_count == 1

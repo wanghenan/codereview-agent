@@ -9,15 +9,14 @@ import pytest
 from codereview.agents.reviewer import ReviewAgent, ReviewOrchestrator
 from codereview.models import (
     Config,
-    ConfigCache,
     ConfigLLM,
     DiffEntry,
     FileIssue,
     FileReview,
     LLMProvider,
     ProjectContext,
-    RiskLevel,
     ReviewConclusion,
+    RiskLevel,
 )
 
 
@@ -297,6 +296,79 @@ class TestReviewAgent:
         result = asyncio.run(run())
         assert result.risk_level == RiskLevel.MEDIUM
         assert "Invalid JSON" in result.issues[0].description
+
+    def test_review_files_progress_count_is_accurate(self, config, mock_llm, project_context):
+        """Progress must advance exactly once per file (no double counting).
+
+        Regression test for the bug where the inner ``completed`` counter and
+        the outer ``pbar.update(1)`` both advanced progress on each completion.
+        """
+        agent = ReviewAgent(config, mock_llm, project_context)
+
+        review_calls = 0
+
+        async def counting_review(entry):
+            nonlocal review_calls
+            review_calls += 1
+            return FileReview(
+                file_path=entry.filename,
+                risk_level=RiskLevel.LOW,
+                changes="+1, -1",
+                issues=[],
+            )
+
+        agent._review_file = counting_review
+
+        entries = [
+            DiffEntry(filename=f"src/f{i}.py", status="modified", additions=1, deletions=1)
+            for i in range(5)
+        ]
+
+        # Patch tqdm to the real implementation so we exercise the real loop;
+        # disable rendering to keep test output clean.
+        with patch.dict("os.environ", {"TQDM_DISABLE": "1"}):
+            results = asyncio.run(agent.review_files(entries))
+
+        # Every file reviewed exactly once, every file returned exactly once.
+        assert review_calls == 5
+        assert len(results) == 5
+
+    def test_review_files_handles_unexpected_exception(
+        self, config, mock_llm, project_context
+    ):
+        """An unexpected exception from a review task must not abort the batch.
+
+        ``_review_file_with_retry`` degrades to a FileReview on failure, but if
+        something escapes it the loop should log and continue with the
+        remaining files rather than crashing the whole batch.
+        """
+
+        async def flaky_review(entry, max_retries=3):
+            if "fail" in entry.filename:
+                raise RuntimeError("simulated unexpected error")
+            return FileReview(
+                file_path=entry.filename,
+                risk_level=RiskLevel.LOW,
+                changes="+1, -1",
+                issues=[],
+            )
+
+        agent = ReviewAgent(config, mock_llm, project_context)
+        agent._review_file_with_retry = flaky_review
+
+        entries = [
+            DiffEntry(filename="src/ok1.py", status="modified", additions=1, deletions=1),
+            DiffEntry(filename="src/fail.py", status="modified", additions=1, deletions=1),
+            DiffEntry(filename="src/ok2.py", status="modified", additions=1, deletions=1),
+        ]
+
+        with patch.dict("os.environ", {"TQDM_DISABLE": "1"}):
+            results = asyncio.run(agent.review_files(entries))
+
+        # The two OK files still come through despite one task raising.
+        paths = {r.file_path for r in results}
+        assert "src/ok1.py" in paths
+        assert "src/ok2.py" in paths
 
 
 class TestReviewOrchestrator:

@@ -40,6 +40,51 @@ EXIT_UNKNOWN_ERROR = 5
 SCHEMA_VERSION = "1.1"
 
 
+def _compute_rules_hash(rule_engine: object) -> str:
+    """Compute a short, stable hash of the active rule set.
+
+    Folded into the file-review cache key so that editing/updating the OWASP
+    rules (or disabling rules) invalidates stale cached reviews.
+
+    Args:
+        rule_engine: A RuleEngine instance (or None).
+
+    Returns:
+        An 8-char hex hash, or ``"no-rules"`` when there is no rule engine.
+    """
+    import hashlib
+
+    rules = getattr(rule_engine, "rules", None)
+    if not rules:
+        return "no-rules"
+
+    # Sort for stability across rule insertion order; only identity-relevant
+    # fields matter for cache validity.
+    payload = sorted(
+        (getattr(r, "id", ""), getattr(r, "pattern", ""), getattr(r, "severity", ""))
+        for r in rules
+    )
+    raw = repr(payload).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:8]
+
+
+def _compute_cache_namespace(config: object, rule_engine: object) -> str:
+    """Build the cache namespace from the active model and rule hash.
+
+    Args:
+        config: Agent Config (its ``llm`` field determines the model).
+        rule_engine: RuleEngine instance (or None).
+
+    Returns:
+        ``"<model>:<rules-hash>"``.
+    """
+    llm_cfg = getattr(config, "llm", None)
+    model = getattr(llm_cfg, "model", None) or LLMFactory.DEFAULT_MODELS.get(
+        getattr(llm_cfg, "provider", None), "unknown"
+    )
+    return f"{model}:{_compute_rules_hash(rule_engine)}"
+
+
 def _classify_error(error: Exception) -> str:
     """Classify an error into a semantic category for AI agent consumers."""
     msg = str(error).lower()
@@ -288,9 +333,30 @@ async def run_review(
     # Create LLM
     llm = LLMFactory.create(config.llm)
 
-    # Initialize cache manager
+    # Initialize rule engine if available (needed before cache namespace,
+    # since the rules hash is folded into the file-review cache key)
+    rule_engine = None
+    if RULES_AVAILABLE:
+        try:
+            rules_path = Path(rules_dir) if rules_dir else None
+            rule_engine = create_rule_engine(rules_dir=rules_path)
+
+            # Disable specified rules
+            if disabled_rules:
+                disabled = rule_engine.disable_rules(disabled_rules)
+                logger.info(f"Disabled {len(disabled)} rule(s): {disabled}")
+
+            logger.info(f"Loaded {len(rule_engine.rules)} detection rules")
+        except Exception as e:
+            logger.warning(f"Failed to load rules: {e}")
+
+    # Initialize cache manager. The namespace folds in the active model and
+    # rule-set hash so changing either invalidates stale file-review caches.
+    cache_namespace = _compute_cache_namespace(config, rule_engine)
     cache_manager = CacheManager(
-        cache_ttl_days=config.cache.ttl_days, enable_file_cache=not disable_cache
+        cache_ttl_days=config.cache.ttl_days,
+        enable_file_cache=not disable_cache,
+        cache_namespace=cache_namespace,
     )
 
     # Get or analyze project context
@@ -315,22 +381,6 @@ async def run_review(
         if git_diff:
             diff_entries = parse_git_diff_to_entries(git_diff)
             logger.info(f"Found {len(diff_entries)} files changed")
-
-    # Initialize rule engine if available
-    rule_engine = None
-    if RULES_AVAILABLE:
-        try:
-            rules_path = Path(rules_dir) if rules_dir else None
-            rule_engine = create_rule_engine(rules_dir=rules_path)
-
-            # Disable specified rules
-            if disabled_rules:
-                disabled = rule_engine.disable_rules(disabled_rules)
-                logger.info(f"Disabled {len(disabled)} rule(s): {disabled}")
-
-            logger.info(f"Loaded {len(rule_engine.rules)} detection rules")
-        except Exception as e:
-            logger.warning(f"Failed to load rules: {e}")
 
     # Get file cache
     file_cache = cache_manager.file_cache if not disable_cache else None

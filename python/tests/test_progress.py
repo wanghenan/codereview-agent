@@ -50,8 +50,20 @@ class TestProgressBarIntegration:
 
     @pytest.fixture
     def mock_project_context(self):
-        """Create mock project context."""
-        return MagicMock(spec=ProjectContext)
+        """Create mock project context with attributes required by __init__.
+
+        _build_context_summary reads language/tech_stack/frameworks/code_style,
+        so a spec-only MagicMock would raise AttributeError. Use a real
+        ProjectContext instead.
+        """
+        return ProjectContext(
+            language="python",
+            tech_stack=[],
+            frameworks=[],
+            code_style=None,
+            critical_paths=[],
+            analyzed_at="2024-01-01T00:00:00",
+        )
 
     @pytest.fixture
     def sample_diff_entries(self):
@@ -201,7 +213,11 @@ class TestProgressBarIntegration:
     async def test_progress_bar_closes_after_completion(
         self, mock_config, mock_llm, mock_project_context, sample_diff_entries
     ):
-        """Test that progress bar is closed after all files are reviewed."""
+        """Test that progress bar is closed after all files are reviewed.
+
+        The bar is now used as a context manager (``with tqdm(...) as pbar``),
+        so cleanup runs via ``__exit__``.
+        """
         agent = ReviewAgent(
             config=mock_config,
             llm=mock_llm,
@@ -218,12 +234,14 @@ class TestProgressBarIntegration:
 
         with patch("codereview.agents.reviewer.tqdm") as mock_tqdm:
             mock_pbar = MagicMock()
-            mock_tqdm.return_value = mock_pbar
+            mock_tqdm.return_value.__enter__.return_value = mock_pbar
+            mock_tqdm.return_value.__exit__.return_value = False
 
             with patch.object(agent, "_review_file_with_retry", side_effect=mock_review):
                 await agent.review_files(sample_diff_entries)
 
-            mock_pbar.close.assert_called_once()
+            # Context manager exit must be invoked to release the bar.
+            mock_tqdm.return_value.__exit__.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_progress_bar_accepts_tasks_parameter(
