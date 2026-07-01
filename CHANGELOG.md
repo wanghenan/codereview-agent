@@ -12,9 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automated release workflow (`.github/workflows/release.yml`): tag-triggered, runs a self-contained quality gate (ruff + pytest), builds wheel/sdist, and publishes a GitHub Release with notes extracted from CHANGELOG.md. Pre-release tags (e.g. `v1.2.0-rc1`) are auto-marked as prerelease.
 - Project URLs (`Homepage`, `Repository`, `Changelog`, `Issues`) in `pyproject.toml` so built artifacts carry complete metadata.
 - Test coverage gating via `pytest-cov` + `[tool.coverage]` (`fail_under = 50`, branch coverage); current baseline ~64%.
-- CI Python version matrix (3.9 / 3.10 / 3.11 / 3.12) so all declared `requires-python` versions are exercised.
+- CI Python version matrix (3.10 / 3.11 / 3.12) so all declared `requires-python` versions are exercised.
 - `.dockerignore` to keep `.git`, caches, venvs, and local output out of the Docker build context.
 - `FileReviewCache.cleanup_expired()` to prune expired/corrupt cache files; invoked once per review run to bound `.codereview-agent/cache/` growth.
+
+### Changed
+- `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 
 ### Changed
 - CLI entry point switched from `main` to a top-level `cli()` dispatcher backed by argparse subparsers; `codereview fix` and `codereview merge` are now first-class subcommands while remaining backward-compatible.

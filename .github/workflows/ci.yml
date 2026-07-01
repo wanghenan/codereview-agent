@@ -63,7 +63,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        # Source uses PEP 604 unions (X | None) at runtime, which requires
+        # Python 3.10+. Keep requires-python and the test matrix in sync.
+        python-version: ['3.10', '3.11', '3.12']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
