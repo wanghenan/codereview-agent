@@ -359,6 +359,13 @@ async def run_review(
         cache_namespace=cache_namespace,
     )
 
+    # Reclaim disk space by pruning expired/corrupt file-review cache entries.
+    # Cheap (glob + header read) and bounds cache growth across runs.
+    if cache_manager.file_cache is not None:
+        removed = cache_manager.file_cache.cleanup_expired()
+        if removed:
+            logger.debug(f"Pruned {removed} expired cache file(s)")
+
     # Get or analyze project context
     project_context = None
 
@@ -561,6 +568,45 @@ def _print_rules(json_output: bool = False) -> None:
         print(f"\n{'=' * 80}")
         print(f"Total: {len(rules)} rules")
         print(f"{'=' * 80}\n")
+
+
+def cli() -> int:
+    """Top-level CLI dispatcher using argparse subparsers.
+
+    Routes ``codereview`` (review), ``codereview fix`` and ``codereview merge``
+    to the corresponding handlers. The subcommand token is popped from
+    ``sys.argv`` before delegating, so each handler's own ``parse_args()``
+    sees only its own arguments.
+
+    Returns:
+        Process exit code.
+    """
+    parser = argparse.ArgumentParser(
+        prog="codereview",
+        description="CodeReview Agent - AI-powered code review",
+    )
+    subparsers = parser.add_subparsers(
+        dest="command",
+        metavar="{fix,merge}",
+    )
+    subparsers.add_parser("fix", help="Auto-fix code review issues")
+    subparsers.add_parser("merge", help="Auto-merge a reviewed PR")
+    # No subparser for the default review command; any other token (or none)
+    # falls through to main().
+
+    # Only parse the first token to decide routing; do NOT consume the rest,
+    # because the delegated handler re-parses sys.argv itself.
+    argv = sys.argv[1:]
+    command = argv[0] if argv else None
+
+    if command in ("fix", "merge"):
+        # Pop the subcommand token so the handler sees its own arg list.
+        sys.argv.pop(1)
+        return main_fix() if command == "fix" else main_merge()
+
+    # Default: review command (no subcommand token). ``main`` handles unknown
+    # args / --help / --version via its own parser.
+    return main()
 
 
 def main():
@@ -1702,13 +1748,4 @@ def main_merge():
 
 
 if __name__ == "__main__":
-    import sys
-
-    # Check if running as fix or merge subcommand
-    if len(sys.argv) > 1 and sys.argv[1] == "fix":
-        sys.argv.pop(1)
-        sys.exit(main_fix())
-    if len(sys.argv) > 1 and sys.argv[1] == "merge":
-        sys.argv.pop(1)
-        sys.exit(main_merge())
-    sys.exit(main())
+    sys.exit(cli())

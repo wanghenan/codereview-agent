@@ -8,8 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LICENSE` (MIT) file and `[project.license]` metadata in `pyproject.toml` (previously declared but missing).
 - Automated release workflow (`.github/workflows/release.yml`): tag-triggered, runs a self-contained quality gate (ruff + pytest), builds wheel/sdist, and publishes a GitHub Release with notes extracted from CHANGELOG.md. Pre-release tags (e.g. `v1.2.0-rc1`) are auto-marked as prerelease.
 - Project URLs (`Homepage`, `Repository`, `Changelog`, `Issues`) in `pyproject.toml` so built artifacts carry complete metadata.
+- Test coverage gating via `pytest-cov` + `[tool.coverage]` (`fail_under = 50`, branch coverage); current baseline ~64%.
+- CI Python version matrix (3.9 / 3.10 / 3.11 / 3.12) so all declared `requires-python` versions are exercised.
+- `.dockerignore` to keep `.git`, caches, venvs, and local output out of the Docker build context.
+- `FileReviewCache.cleanup_expired()` to prune expired/corrupt cache files; invoked once per review run to bound `.codereview-agent/cache/` growth.
+
+### Changed
+- CLI entry point switched from `main` to a top-level `cli()` dispatcher backed by argparse subparsers; `codereview fix` and `codereview merge` are now first-class subcommands while remaining backward-compatible.
+- `MergeMethod` is now defined once (in `models`) and re-exported; the duplicate in `core/github_client.py` was removed.
+- `core/__init__.py` `__getattr__` now covers every name in `__all__` (`TeamInsights`, `create_team_insights`); previously importing them raised `AttributeError`.
+- `Dockerfile` installs the package normally (`pip install .`) instead of editable install (`-e .`).
+- CI workflow `permissions` pinned to `contents: read` (least privilege).
+
+### Removed
+- Stray `test.txt` committed by accident.
 
 ## [1.2.0] - 2026-06-18
 

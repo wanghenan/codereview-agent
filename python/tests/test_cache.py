@@ -228,6 +228,68 @@ class TestFileReviewCache:
 
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def test_cleanup_expired_removes_expired_files(self):
+        """cleanup_expired deletes cache files older than the TTL."""
+        # cache_ttl_days=0 means anything saved is immediately expired.
+        cache = FileReviewCache(
+            cache_ttl_days=0,
+            cache_dir=str(Path(self.temp_dir) / "cleanup_expired"),
+        )
+        cache.save("old1.py", "diff1", {"issues": []})
+        cache.save("old2.py", "diff2", {"issues": []})
+        assert len(list(cache.file_cache_dir.glob("*.json"))) == 2
+
+        removed = cache.cleanup_expired()
+
+        assert removed == 2
+        assert len(list(cache.file_cache_dir.glob("*.json"))) == 0
+
+    def test_cleanup_expired_keeps_valid_files(self):
+        """cleanup_expired leaves non-expired cache files untouched."""
+        self.cache.save("valid1.py", "diff1", {"issues": []})
+        self.cache.save("valid2.py", "diff2", {"issues": []})
+
+        removed = self.cache.cleanup_expired()
+
+        assert removed == 0
+        assert len(list(self.cache.file_cache_dir.glob("*.json"))) == 2
+
+    def test_cleanup_expired_handles_mixed(self):
+        """cleanup_expired removes only expired files from a mixed set."""
+        # Valid file via default cache (ttl=7d), freshly written.
+        self.cache.save("valid.py", "diff_v", {"issues": []})
+        # Expired file: same dir, but backdate its cached_at beyond TTL.
+        self.cache.save("old.py", "diff_o", {"issues": []})
+        old_path = self.cache.file_cache_dir / "old.py.json"
+        import json as _json
+        data = _json.loads(old_path.read_text())
+        data["cached_at"] = "2020-01-01T00:00:00"  # far in the past
+        old_path.write_text(_json.dumps(data))
+        assert len(list(self.cache.file_cache_dir.glob("*.json"))) == 2
+
+        removed = self.cache.cleanup_expired()
+
+        assert removed == 1
+        remaining = [f.name for f in self.cache.file_cache_dir.glob("*.json")]
+        assert len(remaining) == 1
+        assert "valid.py.json" in remaining
+
+    def test_cleanup_expired_removes_corrupt_files(self):
+        """cleanup_expired deletes corrupt JSON files it cannot parse."""
+        target = self.cache.file_cache_dir / "broken.py.json"
+        target.write_text("{ not valid json")
+        assert target.exists()
+
+        removed = self.cache.cleanup_expired()
+
+        assert removed == 1
+        assert not target.exists()
+
+    def test_cleanup_expired_empty_dir(self):
+        """cleanup_expired on an empty cache dir returns 0."""
+        removed = self.cache.cleanup_expired()
+        assert removed == 0
+
 
 class TestCacheManager:
     """Test CacheManager class."""

@@ -234,6 +234,45 @@ class FileReviewCache:
 
         return {"total": total, "valid": valid, "expired": expired}
 
+    def cleanup_expired(self) -> int:
+        """Delete expired and corrupt cache files, returning the count removed.
+
+        Unlike :meth:`get` (which leaves expired files on disk and merely
+        returns ``None``) and :meth:`invalidate_all` (which deletes
+        everything), this reclaims disk space by removing only entries whose
+        TTL has elapsed or that are unreadable. Call periodically to bound
+        cache growth under ``.codereview-agent/cache/file_reviews/``.
+
+        Returns:
+            Number of cache files removed.
+        """
+        if not self.file_cache_dir.exists():
+            return 0
+
+        removed = 0
+        now = datetime.now()
+        ttl = timedelta(days=self.cache_ttl_days)
+
+        for cache_file in self.file_cache_dir.glob("*.json"):
+            expired = True
+            try:
+                with open(cache_file) as f:
+                    data = json.load(f)
+                cached_at = datetime.fromisoformat(data.get("cached_at", ""))
+                expired = (now - cached_at) > ttl
+            except Exception as e:
+                # Unreadable / unparseable file counts as expired and is removed.
+                logger.debug(f"Treating unreadable cache file as expired: {cache_file} ({e})")
+
+            if expired:
+                try:
+                    cache_file.unlink()
+                    removed += 1
+                except OSError as e:
+                    logger.debug(f"Could not delete cache file {cache_file}: {e}")
+
+        return removed
+
 
 class CacheManager:
     """Manage project context cache and file review cache."""
