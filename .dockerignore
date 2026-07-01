@@ -1,0 +1,54 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Python caches & virtualenvs
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+venv/
+.eggs/
+**/*.egg-info/
+**/*.egg
+
+# Build artifacts
+python/dist/
+python/build/
+**/*.whl
+**/*.tar.gz
+
+# IDE & editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docs & project meta (not needed in runtime image)
+docs/
+*.md
+!python/README.md
+LICENSE
+CHANGELOG.md
+CONTRIBUTING.md
+AGENTS.md
+CODE_OF_CONDUCT.md
+
+# CI / GitHub meta
+.github/
+.vscode-extension/
+nodejs/
+docker/
+
+# Local runtime data & secrets
+.codereview-agent/
+.env
+.env.*
+*.log
+
+# Agent working artifacts
+.sisyphus/

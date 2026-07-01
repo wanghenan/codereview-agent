@@ -63,6 +63,14 @@ def __getattr__(name):
         from codereview.core.history_tracker import HistoryTracker
 
         return HistoryTracker
+    elif name == "TeamInsights":
+        from codereview.core.team_insights import TeamInsights
+
+        return TeamInsights
+    elif name == "create_team_insights":
+        from codereview.core.team_insights import create_team_insights
+
+        return create_team_insights
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

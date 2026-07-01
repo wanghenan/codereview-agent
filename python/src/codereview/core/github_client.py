@@ -13,15 +13,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
+from codereview.models import MergeMethod
+
 logger = logging.getLogger(__name__)
-
-
-class MergeMethod(str, Enum):
-    """GitHub merge method."""
-
-    SQUASH = "squash"
-    MERGE = "merge"
-    REBASE = "rebase"
 
 
 class MergeState(str, Enum):

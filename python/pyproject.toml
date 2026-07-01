@@ -3,6 +3,7 @@ name = "codereview-agent"
 version = "1.2.0"
 description = "AI-powered CodeReview Agent with LangChain + LangGraph"
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
     "langchain>=0.3.0",
@@ -29,6 +30,7 @@ Issues = "https://github.com/wanghenan/codereview-agent/issues"
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
     "pytest-mock>=3.0.0",
     "ruff>=0.6.0",
     "mypy>=1.0.0",
@@ -36,7 +38,7 @@ dev = [
 ]
 
 [project.scripts]
-codereview = "codereview.cli:main"
+codereview = "codereview.cli:cli"
 
 [build-system]
 requires = ["setuptools>=68.0.0", "wheel"]
@@ -58,3 +60,23 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 disallow_any_generics = false
 disable_error_code = ["var-annotated", "import-untyped", "import-not-found", "no-untyped-def", "no-untyped-call", "type-arg", "attr-defined", "assignment", "arg-type", "return-value", "misc", "no-any-return", "valid-type", "syntax", "operator", "call-overload"]
+
+[tool.coverage.run]
+source = ["codereview"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+# Fail CI if coverage drops below this threshold. Set conservatively to the
+# current baseline so existing code passes; raise as coverage improves.
+fail_under = 50
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
