@@ -10,11 +10,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from codereview.agents import ProjectAnalyzer, ReviewOrchestrator
 from codereview.core import CacheManager, ConfigLoader, LLMFactory
-from codereview.models import DiffEntry
+from codereview.models import CacheInfo, DiffEntry
 from codereview.output import OutputGenerator
 
 # Try to import rule engine
@@ -398,15 +398,11 @@ async def run_review(
 
     # Add cache info
     cache_info = cache_manager.get_cache_info()
-    result.cache_info = type(
-        "CacheInfo",
-        (),
-        {
-            "used_cache": project_context is not None and not config.cache.force_refresh,
-            "cache_timestamp": cache_info.get("modified_at"),
-            "cache_version": cache_info.get("version"),
-        },
-    )()
+    result.cache_info = CacheInfo(
+        used_cache=project_context is not None and not config.cache.force_refresh,
+        cache_timestamp=cache_info.get("modified_at"),
+        cache_version=cache_info.get("version"),
+    )
 
     # Generate output
     output_config = config.output
@@ -654,6 +650,12 @@ def main():
     )
 
     parser.add_argument(
+        "--apply-auto-merge",
+        action="store_true",
+        help="Actually merge when --auto-merge conditions are met (default: dry-run preview)",
+    )
+
+    parser.add_argument(
         "--token", "-t", type=str, help="GitHub token (or set GITHUB_TOKEN env var)"
     )
 
@@ -792,7 +794,7 @@ def main():
                 disable_cache=args.no_cache,
                 auto_merge=args.auto_merge,
                 github_token=args.token,
-                merge_dry_run=True,  # Always dry-run for now, --apply-auto-merge for non-dry
+                merge_dry_run=not args.apply_auto_merge,
                 disabled_rules=disabled_rules,
             )
         )
@@ -902,8 +904,8 @@ async def run_fix(
     file_filter: str | None = None,
     min_risk: str = "high",
     json: bool = False,
-    output_path: str | None = None,
     interactive: bool = False,
+    confirm: Callable[[int, int], bool] | None = None,
 ) -> dict:
     """Generate and optionally apply fixes for code issues.
 
@@ -917,7 +919,11 @@ async def run_fix(
         file_filter: Only fix issues in files matching this pattern
         min_risk: Minimum risk level to fix (high, medium, low)
         json: Output as JSON
-        output_path: Optional path to save fix preview
+        interactive: Prompt for each fix individually (y/n/a)
+        confirm: Optional callback ``(fixes_count, files_count) -> bool`` invoked
+            after fixes are generated but *before* any file is written. When it
+            returns False, no file is modified and the result has
+            ``cancelled: True``. None means apply without asking (CI/--yes).
 
     Returns:
         Dict with fix results
@@ -996,14 +1002,14 @@ async def run_fix(
 
     result = await orchestrator.run_review(diff_entries, project_context)
 
-    # Collect issues
+    # Collect issues at or above the minimum risk level (severity-ordered)
+    risk_order = {"low": 0, "medium": 1, "high": 2}
+    min_level = risk_order[min_risk]
     all_issues = []
     for file_review in result.files_reviewed:
         for issue in file_review.issues:
-            # Filter by risk level
-            if issue.risk_level.value in [min_risk, "high", "medium"]:
-                if issue.risk_level.value in ("high", "medium") or min_risk == "low":
-                    all_issues.append((file_review.file_path, issue))
+            if risk_order[issue.risk_level.value] >= min_level:
+                all_issues.append((file_review.file_path, issue))
 
     if not all_issues:
         return {
@@ -1076,6 +1082,23 @@ async def run_fix(
     skipped_count = 0
     applied_files = []
     selected_fixes = []  # Track fixes user selected to apply
+
+    # Confirmation gate: ask *before* writing anything to disk
+    if apply and not dry_run and confirm is not None:
+        files_count = len({fix.issue.file_path for fix in fixes})
+        if not confirm(len(fixes), files_count):
+            return {
+                "success": True,
+                "fixes": fixes_output,
+                "total_issues": len(all_issues),
+                "fixes_generated": len(fixes),
+                "applied": 0,
+                "skipped": 0,
+                "applied_files": [],
+                "applied_changes": {},
+                "dry_run": True,
+                "cancelled": True,
+            }
 
     if apply and not dry_run:
         # Sort fixes by file and line number (apply from bottom to top to preserve line numbers)
@@ -1292,6 +1315,24 @@ def main_fix():
     # Determine dry_run mode
     dry_run = args.dry_run or not args.apply
 
+    # Confirmation gate for apply mode: asked after fixes are generated but
+    # before any file is written. CI/non-TTY/--yes skip the prompt.
+    confirm_callback = None
+    if args.apply and not args.yes and not args.json and sys.stdout.isatty():
+
+        def confirm_callback(fixes_count: int, files_count: int) -> bool:
+            print(f"\n{'=' * 60}")
+            response = (
+                input(f"⚠️  Confirm applying {fixes_count} fixes to {files_count} file(s)? [y/N]: ")
+                .strip()
+                .lower()
+            )
+            if response not in ("y", "yes"):
+                print("❌ Cancelled. No files were modified.")
+                return False
+            print("✅ Applying fixes...")
+            return True
+
     try:
         result = asyncio.run(
             run_fix(
@@ -1304,32 +1345,10 @@ def main_fix():
                 file_filter=args.file,
                 min_risk=args.min_risk,
                 json=args.json,
-                output_path=args.output,
                 interactive=args.interactive,
+                confirm=confirm_callback,
             )
         )
-
-        # Confirmation prompt for apply mode
-        if args.apply and not args.yes and not args.json:
-            # Check if running in TTY
-            import sys
-
-            if sys.stdout.isatty():
-                fixes_count = result.get("fixes_generated", 0)
-                files_count = len(set(f.get("file") for f in result.get("fixes", [])))
-                print(f"\n{'=' * 60}")
-                response = (
-                    input(
-                        f"⚠️  Confirm applying {fixes_count} fixes to {files_count} file(s)? [y/N]: "
-                    )
-                    .strip()
-                    .lower()
-                )
-                if response not in ("y", "yes"):
-                    print("❌ Cancelled. No files were modified.")
-                    return 1
-                print("✅ Applying fixes...")
-            # Non-TTY: proceed without confirmation
 
         result["schema_version"] = SCHEMA_VERSION
 
@@ -1344,7 +1363,7 @@ def main_fix():
             Path(args.output).write_text(output_content, encoding="utf-8")
             print(f"\n📄 Fix preview saved to: {args.output}")
 
-        return 0 if result.get("success") else 1
+        return 0 if result.get("success") and not result.get("cancelled") else 1
 
     except Exception as e:
         return _json_error(e, json_output=args.json)
@@ -1470,7 +1489,7 @@ def _print_fix_output(result: dict, args) -> None:
         if len(original_lines) > 5:
             print(f"   -  ... ({len(original_lines) - 5} more lines)")
 
-        print('"   +++ Fixed')
+        print("   +++ Fixed")
         for line in fixed_lines[:5]:
             print(f"   +  {line}")
         if len(fixed_lines) > 5:

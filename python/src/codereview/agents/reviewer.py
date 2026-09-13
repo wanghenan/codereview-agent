@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -89,17 +89,17 @@ def _extract_balanced_object(text: str) -> Optional[str]:
 
 
 # State for the review orchestrator graph
-class OrchestratorState(dict):
+class OrchestratorState(TypedDict, total=False):
     """State for the review orchestrator graph."""
 
     config: Config
     diff_entries: list[DiffEntry]
-    project_context: ProjectContext | None = None
-    file_reviews: list[FileReview] = []
-    conclusion: ReviewConclusion | None = None
-    confidence: float = 0.0
-    summary: str = ""
-    review_complete: bool = False
+    project_context: ProjectContext | None
+    file_reviews: list[FileReview]
+    conclusion: ReviewConclusion | None
+    confidence: float
+    summary: str
+    review_complete: bool
 
 
 # System prompt for code review

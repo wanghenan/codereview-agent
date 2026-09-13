@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 # State for the analyzer agent
-class AnalyzerState(dict):
+class AnalyzerState(TypedDict, total=False):
     """State for project analyzer agent."""
 
     config: Config
     root_dir: Path
-    files_info: str = ""
-    project_context: ProjectContext | None = None
-    analysis_complete: bool = False
+    files_info: str
+    project_context: ProjectContext | None
+    analysis_complete: bool
 
 
 # System prompt for project analysis
