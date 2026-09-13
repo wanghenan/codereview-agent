@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from codereview.core.cache import CacheManager, FileReviewCache, VersionDetector
+from codereview.core.cache import CacheManager, FileReviewCache
 
 
 class TestFileReviewCache:
@@ -377,48 +377,3 @@ class TestCacheManager:
 
         self.cache_manager.save(ctx)
         assert self.cache_manager.cache_file.exists()
-
-
-class TestVersionDetector:
-    """Test VersionDetector class."""
-
-    def test_detect_version_no_config(self):
-        """Test version detection with no config files."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            version = VersionDetector.detect_version(root)
-            assert version is None
-
-    def test_detect_version_package_json(self):
-        """Test version detection from package.json."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            pkg_json = root / "package.json"
-            pkg_json.write_text('{"name": "test", "version": "1.2.3"}')
-
-            version = VersionDetector.detect_version(root)
-            assert version == "1.2.3"
-
-    def test_detect_version_pyproject_toml(self):
-        """Test version detection from pyproject.toml."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            pyproject = root / "pyproject.toml"
-            pyproject.write_text('[project]\nversion = "2.0.0"')
-
-            version = VersionDetector.detect_version(root)
-            # May be None if tomli not installed
-            assert version is None or version == "2.0.0"
-
-    def test_has_config_changed(self):
-        """Test checking if config has changed."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            pkg_json = root / "package.json"
-            pkg_json.write_text('{"version": "1.0.0"}')
-
-            changed = VersionDetector.has_config_changed(root, "1.0.0")
-            assert changed is False
-
-            changed = VersionDetector.has_config_changed(root, "0.9.0")
-            assert changed is True

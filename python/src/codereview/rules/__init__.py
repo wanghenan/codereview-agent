@@ -274,16 +274,3 @@ def get_all_rules() -> list[DetectionRule]:
     """
     engine = RuleEngine()
     return engine.rules
-
-
-def disable_rules(ids: list[str]) -> list[str]:
-    """Disable rules by their IDs.
-
-    Args:
-        ids: List of rule IDs to disable
-
-    Returns:
-        List of actually disabled rule IDs (excludes invalid IDs)
-    """
-    engine = RuleEngine()
-    return engine.disable_rules(ids)

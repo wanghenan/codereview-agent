@@ -14,12 +14,6 @@ from codereview.models import ProjectContext
 
 logger = logging.getLogger(__name__)
 
-# Optional imports for version detection
-try:
-    import tomli
-except ImportError:
-    tomli = None
-
 
 class FileReviewCache:
     """Cache for individual file review results to enable incremental review."""
@@ -395,59 +389,3 @@ class CacheManager:
             True if cache exists and is valid
         """
         return self.load() is not None
-
-
-class VersionDetector:
-    """Detect project version for cache invalidation."""
-
-    @staticmethod
-    def detect_version(root_dir: Path) -> Optional[str]:
-        """Detect project version from config files.
-
-        Args:
-            root_dir: Project root directory
-
-        Returns:
-            Version string if detected, None otherwise
-        """
-        # Check package.json (Node.js)
-        pkg_json = root_dir / "package.json"
-        if pkg_json.exists():
-            try:
-                with open(pkg_json) as f:
-                    data = json.load(f)
-                    return data.get("version")
-            except Exception as e:
-                logger.debug(f"Could not read version from package.json: {e}")
-
-        # Check pyproject.toml (Python)
-        pyproject = root_dir / "pyproject.toml"
-        if pyproject.exists():
-            try:
-                if tomli is None:
-                    raise ImportError("tomli not installed")
-                with open(pyproject, "rb") as f:
-                    data = tomli.load(f)
-                    return data.get("project", {}).get("version")
-            except ImportError:
-                # tomli not installed, try manual parsing
-                pass
-            except Exception as e:
-                logger.debug(f"Could not read version from pyproject.toml: {e}")
-
-        # Check setup.py, __init__.py version, etc.
-        return None
-
-    @staticmethod
-    def has_config_changed(root_dir: Path, cached_version: str) -> bool:
-        """Check if project config has changed since cached version.
-
-        Args:
-            root_dir: Project root directory
-            cached_version: Version from cache
-
-        Returns:
-            True if config has changed
-        """
-        current_version = VersionDetector.detect_version(root_dir)
-        return current_version != cached_version
