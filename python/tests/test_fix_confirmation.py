@@ -88,7 +88,7 @@ def _patch_common(review_result: ReviewResult, generate_fix_return=None):
     return (
         patch("codereview.cli.ConfigLoader.load", return_value=config),
         patch("codereview.cli.LLMFactory.create", return_value=MagicMock()),
-        patch("codereview.cli.ReviewOrchestrator", orchestrator_cls),
+        patch("codereview.cli.fix_cmd.ReviewOrchestrator", orchestrator_cls),
         patch("codereview.core.fixer.CodeFixer", fixer_cls),
     )
 
