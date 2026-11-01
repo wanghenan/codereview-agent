@@ -176,3 +176,36 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 - `neg-llm-kwargs-unpack`：模型指出"多了一层字典解包"，属于风格评论而非缺陷。
 
 **解读**：注入样本的召回已经是满分，说明当前的 Prompt 在"看得见的缺陷"上够用；真正的差距在**噪声**——这正是 S4 裁决层（按 confidence 过滤 LOW 级 finding）要解决的问题。下一轮基线应在接入 confidence 阈值后重跑，看误报能否降到 1/6 以下、同时保持正例命中。
+
+### 阈值扫描（同日，带 confidence 的第二轮）
+
+第二轮基线在报告里渲染了 `conf` 与 `source`，据此对 `min_confidence` 做扫描（正例 = 文件一致且行号 ±5；负例只要有任何 finding 即算误报）：
+
+| 阈值 | 正例命中 | 负例误报 | 丢掉的正例 | 过滤掉的负例 |
+|---|---|---|---|---|
+| 0.00 | 24 | 2 | 0 | 0 |
+| 0.40 | 24 | 2 | 0 | 0 |
+| **0.50** | **24** | **1** | **0** | **1** |
+| 0.60 | 23 | 1 | 1 | 1 |
+| 0.75 | 20 | 0 | 4 | 2 |
+| 0.90 | 11 | 0 | 13 | 2 |
+
+两条误报的 confidence 分别是 **0.40**（`neg-cache-rename-local`）和 **0.70**（`neg-llm-kwargs-unpack`，LOW / 风格建议）；正例的 confidence 区间是 0.50–0.98。
+
+**决定：`min_confidence = 0.50`，`drop_low_risk_llm` 默认关闭。**
+
+理由：0.50 用零召回代价去掉一条误报；再往上（0.60+）开始伤正例。剩下的 0.70 那条是 LOW 级风格意见，用 `drop_low_risk_llm` 能清掉，但代价是唯一一条依赖 LOW 命中的正例（`llm-provider-failure-hidden`，conf 0.55）也会被丢——用一条真问题换一条无关痛痒的噪声不划算。需要更激进降噪的团队可以在配置里自行打开。
+
+### 过滤后确认基线（同日，`min_confidence = 0.5` 生效）
+
+报告：`python/tests/benchmark/reports/after-filter.md`。
+
+| 指标 | 过滤前 | 过滤后 |
+|---|---|---|
+| 正例命中（文件 + 行号 ±5） | 24 / 24 | **24 / 24** |
+| 负例误报 | 2 / 6 | **1 / 6** |
+| 每例耗时 | ~3 s | ~3 s |
+
+被去掉的是 `neg-cache-rename-local`（confidence 0.40 的"如果后面还有代码引用…"式猜测）；剩下的一条是 `neg-llm-kwargs-unpack`（confidence 0.75，LOW，风格建议"多了一层字典解包"）。
+
+**这条剩余误报怎么处理**：它属于 `maintainability` 类别的风格意见。两条路——`drop_categories: [maintainability]` 会连真正的可维护性问题一起丢，太粗暴；`drop_low_risk_llm: true` 能精准去掉它，但同样会丢掉唯一依赖 LOW 命中的正例（`llm-provider-failure-hidden`，conf 0.55）。当前选择保留：一条 LOW 级风格评论的代价，小于丢掉一条真实问题。

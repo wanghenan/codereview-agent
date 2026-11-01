@@ -131,7 +131,7 @@
 | S1 Finding 模型 | ✅ 已提交 `2c15c60` | `FileIssue` 增加 `title/end_line/category/confidence/evidence/suggested_patch/source` + `dedupe_key()`；LLM 输出经 `_to_finding` 归一化；规则命中标记 `source="rule"` 并带规则证据；prompt 已要求 category/confidence/evidence |
 | S2 行内评论 | ✅ 已合入 `230e38e` + 接线 `4ea859a` | 25 条上限、severity×confidence 排序、折叠摘要、`findings.json` |
 | S3 准入层 | ✅ 已合入 `4b926a5` + 接线 `4ea859a` | filter + token 预算 + `ReviewResult.skipped` |
-| S4 工具接入 | ✅ 已合入 `e7ef370` + 接线 `4ea859a` | tool_runner；删除 7 套正则语言包与 complexity_scorer（净 -3158 行） |
+| S4 工具接入 | ✅ 已合入 `e7ef370` + 接线 `4ea859a` + 过滤 `6d4617a` | tool_runner；删除 7 套正则语言包与 complexity_scorer（净 -3158 行）；`min_confidence=0.5` 降噪 |
 
 ### 并行实施（worktree 分工）
 
