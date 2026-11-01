@@ -105,6 +105,7 @@ def findings_of(result: dict[str, Any]) -> list[dict[str, Any]]:
                     "confidence": issue.get("confidence"),
                     "source": issue.get("source"),
                     "category": issue.get("category"),
+                    "caller": issue.get("caller"),
                     "description": (issue.get("description") or "").strip(),
                     "suggestion": (issue.get("suggestion") or "").strip(),
                 }
@@ -140,9 +141,10 @@ def _fmt_finding(row: dict[str, Any]) -> str:
     delta = f" Δ{row['delta']}" if row.get("delta") is not None else ""
     conf = row.get("confidence")
     conf_text = f" conf={conf:.2f}" if isinstance(conf, (int, float)) else ""
+    caller = f" caller={row['caller']}" if row.get("caller") else ""
     return (
         f"- `{loc}`{delta} [{row['severity']}{conf_text} src={row.get('source')}"
-        f"/{row.get('category')}] {row['description'][:600]}"
+        f"/{row.get('category')}{caller}] {row['description'][:600]}"
     )
 
 

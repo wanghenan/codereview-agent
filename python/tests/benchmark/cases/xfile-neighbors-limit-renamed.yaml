@@ -22,5 +22,5 @@ diff: "diff --git a/python/src/codereview/core/symbol_index.py b/python/src/code
   \   ) -> list[Neighbor]:\n         \"\"\"Return one-hop context around a changed\
   \ range in ``path``.\n \n"
 cross_file:
-  caller: python/src/codereview/agents/reviewer.py:563
+  caller: python/src/codereview/agents/reviewer.py:579
   note: reviewer.py 仍然使用 limit=context_config.max_neighbors

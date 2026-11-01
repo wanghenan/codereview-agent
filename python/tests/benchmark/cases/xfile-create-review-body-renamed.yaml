@@ -22,5 +22,5 @@ diff: "diff --git a/python/src/codereview/core/github_client.py b/python/src/cod
   \ Optional[str] = None,\n         event: str = \"COMMENT\",\n     ) -> bool:\n \
   \        \"\"\"Create a PR review with inline comments.\n"
 cross_file:
-  caller: python/src/codereview/cli/review_cmd.py:224
+  caller: python/src/codereview/cli/review_cmd.py:228
   note: review_cmd.py 仍然使用 body=inline_payload['summary']

@@ -205,7 +205,8 @@ Analyze this code change and provide a risk assessment in JSON format:
             "description": "Issue description",
             "suggestion": "How to fix",
             "confidence": 0.0,
-            "evidence": ["symbol, rule id, or file:line that proves it"]
+            "evidence": ["symbol, rule id, or file:line that proves it"],
+            "caller": "path:line of the caller, only when the cross-file context shows one"
         }}
     ],
     "summary": "Brief summary of the review"
@@ -265,6 +266,23 @@ Output:
     "issues": [],
     "summary": "Clean change with no significant issues found"
 }}"""
+
+
+_CALLER_RE = re.compile(r"^[\w./-]+:\d+$")
+
+
+def _clean_caller(value: Any) -> Optional[str]:
+    """Return ``value`` if it looks like ``path:line``, else ``None``.
+
+    The caller field is a structured claim used for scoring and reporting, so
+    a malformed value is dropped rather than stored verbatim.
+    """
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate or len(candidate) > 200:
+        return None
+    return candidate if _CALLER_RE.match(candidate) else None
 
 
 class ReviewAgent:
@@ -482,6 +500,7 @@ class ReviewAgent:
             description=raw.get("description", ""),
             suggestion=raw.get("suggestion"),
             title=str(raw.get("title") or "")[:200],
+            caller=_clean_caller(raw.get("caller")),
             category=_enum(raw.get("category"), IssueCategory, IssueCategory.BUG),
             confidence=max(0.0, min(1.0, float(confidence))),
             evidence=evidence,
@@ -578,13 +597,17 @@ class ReviewAgent:
         if not neighbors or max_chars <= 0:
             return ""
 
-        blocks = [
-            (
-                f"{neighbor.reason} {neighbor.path}:"
-                f"{neighbor.start_line}-{neighbor.end_line}\n{neighbor.excerpt}"
+        def numbered(neighbor: object) -> str:
+            """Prefix the excerpt with real line numbers so cited lines are exact."""
+            start = getattr(neighbor, "start_line", 1)
+            lines = str(getattr(neighbor, "excerpt", "")).splitlines()
+            body = "\n".join(f"{start + offset:5d} | {line}" for offset, line in enumerate(lines))
+            return (
+                f"{getattr(neighbor, 'reason', 'context')} {getattr(neighbor, 'path', '?')}:"
+                f"{getattr(neighbor, 'start_line', 0)}-{getattr(neighbor, 'end_line', 0)}\n{body}"
             )
-            for neighbor in neighbors
-        ]
+
+        blocks = [numbered(neighbor) for neighbor in neighbors]
         text = "## Cross-file context\n\n" + "\n\n".join(blocks)
         if len(text) <= max_chars:
             return text
@@ -875,7 +898,8 @@ class ReviewAgent:
   calls, and the context shows the caller, name that caller using the exact
   `path:line` from the context header (for example "still called at
   src/app/caller.py:42"). Do not speculate about callers the context does not
-  show; say "callers not shown" instead.
+  show; say "callers not shown" instead. Put that caller in the ``caller``
+  field as ``path:line``; leave it out when no caller is shown.
         - {filename}: Current file being reviewed
         - {status}: File status (added/modified/deleted)
         - {additions}: Number of lines added

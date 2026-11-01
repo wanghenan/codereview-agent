@@ -394,7 +394,7 @@ RECIPES: list[dict] = [
         "summary": "filter_entries 新增必填参数，两处调用点会直接 TypeError",
         "why": "只改签名本身看起来像内部重构；破坏发生在调用方 reviewer.py，它仍按两个位置参数调用。",
         "cross_file": {
-            "caller": "python/src/codereview/agents/reviewer.py:1055",
+            "caller": "python/src/codereview/agents/reviewer.py:1084",
             "note": "reviewer.py 中 filter_entries(diff_entries, filter_config) 少一个参数",
         },
         "tags": ["cross-file", "signature"],
@@ -409,7 +409,7 @@ RECIPES: list[dict] = [
         "summary": "filter_findings 参数顺序被调换，位置参数调用方会把 issues 当 rules",
         "why": "改后函数体内引用仍合法（类型注解不检查），只有调用方 reviewer.py 按位置传参时才会错位。",
         "cross_file": {
-            "caller": "python/src/codereview/agents/reviewer.py:1213",
+            "caller": "python/src/codereview/agents/reviewer.py:1242",
             "note": "reviewer.py 中 filter_findings(review.issues, rules) 仍按旧顺序调用",
         },
         "tags": ["cross-file", "signature"],
@@ -439,7 +439,7 @@ RECIPES: list[dict] = [
         "summary": "ToolRunner.run 的 cwd 关键字参数被改名，调用方仍传 cwd=",
         "why": "关键字参数改名在定义侧无痕迹；reviewer.py 里 active_runner.run(paths, cwd=self.project_root) 会 TypeError。",
         "cross_file": {
-            "caller": "python/src/codereview/agents/reviewer.py:638",
+            "caller": "python/src/codereview/agents/reviewer.py:661",
             "note": "reviewer.py 仍然使用 cwd=self.project_root",
         },
         "tags": ["cross-file", "rename"],
@@ -454,7 +454,7 @@ RECIPES: list[dict] = [
         "summary": "neighbors 的 limit 参数被改名，调用方仍传 limit=",
         "why": "参数改名只影响关键字调用；reviewer.py 的 neighbors(..., limit=context_config.max_neighbors) 会 TypeError。",
         "cross_file": {
-            "caller": "python/src/codereview/agents/reviewer.py:563",
+            "caller": "python/src/codereview/agents/reviewer.py:579",
             "note": "reviewer.py 仍然使用 limit=context_config.max_neighbors",
         },
         "tags": ["cross-file", "rename"],
@@ -469,7 +469,7 @@ RECIPES: list[dict] = [
         "summary": "create_review 的 body 参数被改名，调用方仍传 body=",
         "why": "签名改名在 github_client.py 内部自洽（函数体若同步改），但 review_cmd.py 用 body=inline_payload['summary'] 调用会 TypeError。",
         "cross_file": {
-            "caller": "python/src/codereview/cli/review_cmd.py:224",
+            "caller": "python/src/codereview/cli/review_cmd.py:228",
             "note": "review_cmd.py 仍然使用 body=inline_payload['summary']",
         },
         "tags": ["cross-file", "rename"],

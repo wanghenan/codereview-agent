@@ -23,5 +23,5 @@ diff: "diff --git a/python/src/codereview/core/tool_runner.py b/python/src/coder
   \         \"\"\"Run every applicable available tool and return normalised findings.\n\
   \ \n         Missing tools are skipped without raising but recorded as a\n"
 cross_file:
-  caller: python/src/codereview/agents/reviewer.py:638
+  caller: python/src/codereview/agents/reviewer.py:661
   note: reviewer.py 仍然使用 cwd=self.project_root

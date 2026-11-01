@@ -128,3 +128,24 @@ class TestToFinding:
             "src/app.py", {"risk_level": "low", "description": "x", "title": "t" * 500}
         )
         assert len(finding.title) == 200
+
+
+class TestCallerField:
+    """The structured caller claim is validated, not trusted verbatim."""
+
+    def test_default_is_none(self):
+        assert _issue().caller is None
+
+    def test_valid_caller_is_kept(self):
+        finding = ReviewAgent._to_finding(
+            "src/app.py",
+            {"risk_level": "high", "description": "x", "caller": "src/other.py:42"},
+        )
+        assert finding.caller == "src/other.py:42"
+
+    def test_malformed_caller_is_dropped(self):
+        for value in ("see the caller", "src/other.py", "src/other.py:", 42, None):
+            finding = ReviewAgent._to_finding(
+                "src/app.py", {"risk_level": "low", "description": "x", "caller": value}
+            )
+            assert finding.caller is None, value

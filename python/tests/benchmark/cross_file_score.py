@@ -46,14 +46,29 @@ def score(report: Path, callers: dict[str, tuple[str, str, str]]) -> dict[str, t
         case_id = section.splitlines()[0].split(" · ")[0]
         if case_id not in callers:
             continue
-        _, basename, line = callers[case_id]
+        caller_path, basename, line = callers[case_id]
         body = section.split("**findings**", 1)[-1]
         confidences = [float(value) for value in re.findall(r"conf=([\d.]+)", body)]
-        results[case_id] = (
-            basename in body,
-            re.search(rf"{re.escape(basename)}[^\n]{{0,40}}[:#]?{line}\b", body) is not None,
-            max(confidences, default=0.0),
+        structured = re.findall(r"caller=([^\s\]]+)", body)
+        names_file = basename in body or any(
+            value.startswith(caller_path[: -len(basename)]) and value.endswith(basename + ":" + line)
+            for value in structured
         )
+        # A citer may point at the call or at the keyword argument a few lines
+        # below it; accept a small window instead of demanding one exact row.
+        def _near(value: str) -> bool:
+            prefix = f"{caller_path}:"
+            if not value.startswith(prefix):
+                return False
+            try:
+                return abs(int(value[len(prefix):]) - int(line)) <= 5
+            except ValueError:
+                return False
+
+        names_line = any(_near(value) for value in structured) or (
+            re.search(rf"{re.escape(basename)}[^\n]{{0,40}}[:#]?{line}\b", body) is not None
+        )
+        results[case_id] = (names_file, names_line, max(confidences, default=0.0))
     return results
 
 

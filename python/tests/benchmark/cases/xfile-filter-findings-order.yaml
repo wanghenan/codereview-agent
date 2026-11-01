@@ -21,5 +21,5 @@ diff: "diff --git a/python/src/codereview/core/finding_filter.py b/python/src/co
   \ tuple[list[FileIssue], list[FilteredFinding]]:\n     \"\"\"Split findings into\
   \ kept and filtered sets.\n \n"
 cross_file:
-  caller: python/src/codereview/agents/reviewer.py:1213
+  caller: python/src/codereview/agents/reviewer.py:1242
   note: reviewer.py 中 filter_findings(review.issues, rules) 仍按旧顺序调用

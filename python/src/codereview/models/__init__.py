@@ -87,6 +87,10 @@ class FileIssue(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     suggested_patch: Optional[str] = None
     source: Literal["rule", "tool", "llm"] = "llm"
+    #: ``path:line`` of the caller that the change breaks, when the model was
+    #: shown one in the cross-file context. Structured so the claim is
+    #: checkable instead of being buried in prose.
+    caller: Optional[str] = None
 
     @model_validator(mode="after")
     def _check_line_range(self) -> FileIssue:
