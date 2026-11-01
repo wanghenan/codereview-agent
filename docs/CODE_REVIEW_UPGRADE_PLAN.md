@@ -132,3 +132,15 @@
 | S2 行内评论 | ⏳ | 新增文件；待基线跑分后再定 top-N 限额 |
 | S3 准入层 | ⏳ | |
 | S4 工具接入 | ⏳ | 先删 `core/languages/*` 与 `complexity_scorer.py` |
+
+### 并行实施（worktree 分工）
+
+S2 / S3 / S4 文件集不相交，可并行；接线留在主线按序完成：
+
+| 分支 | 目录 | 范围 | 集成动作 |
+|---|---|---|---|
+| `agent/s2-wt` | `crAgent-wt-s2` | `output/inline.py`、`github_client.create_review` | `run_review` 输出同时产出 comments + findings.json |
+| `agent/s3-wt` | `crAgent-wt-s3` | `core/diff_filter.py`、`models.SkipRecord` | `review_files` 前调用 `filter_entries`，跳过原因进 `ReviewResult.skipped` |
+| `agent/s4-wt` | `crAgent-wt-s4` | `core/tool_runner.py`、删正则语言包 | 裁决层把 tool finding 当候选，LLM 只裁决 |
+
+集成顺序：S3 → S2 → S4（冲突面从小到大）。
