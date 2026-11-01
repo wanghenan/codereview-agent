@@ -710,6 +710,85 @@ class GitHubClient:
         else:
             return await self._post_comment_via_api(owner, repo, pr_number, body)
 
+    async def list_review_comments(self, pr_number: int) -> list[dict[str, Any]]:
+        """List the inline review comments a PR already carries (S6 dedupe input).
+
+        Each entry is compacted to the fields the reviewer needs: ``id``,
+        ``path``, ``line``, ``body``, ``author`` and ``reactions`` (the 👎
+        summary drives team memory).
+
+        Args:
+            pr_number: PR number
+
+        Returns:
+            Existing comments, oldest first. An unavailable or failing GitHub
+            call returns an empty list: dedupe is best-effort and must never
+            turn a review into a failure.
+        """
+        owner, repo = self._get_repo_info()
+
+        if self.gh_available:
+            result = self._run_gh([f"pulls/{pr_number}/comments", "--paginate", "--slurp"])
+            if result.returncode != 0:
+                logger.warning("Could not list PR comments: %s", (result.stderr or "").strip())
+                return []
+            try:
+                pages = json.loads(result.stdout or "[]")
+            except json.JSONDecodeError as exc:
+                logger.warning("Could not parse PR comment list: %s", exc)
+                return []
+            raw = [
+                comment
+                for page in (pages if isinstance(pages, list) else [pages])
+                for comment in (page if isinstance(page, list) else [])
+            ]
+        else:
+            raw = await self._list_comments_via_api(owner, repo, pr_number)
+
+        return [self._compact_comment(comment) for comment in raw if isinstance(comment, dict)]
+
+    @staticmethod
+    def _compact_comment(comment: dict[str, Any]) -> dict[str, Any]:
+        """Reduce a GitHub review comment to the fields dedupe and memory read."""
+        user = comment.get("user") or {}
+        reactions = comment.get("reactions") or {}
+        return {
+            "id": comment.get("id"),
+            "path": comment.get("path") or "",
+            "line": comment.get("line"),
+            "original_line": comment.get("original_line"),
+            "body": comment.get("body") or "",
+            "author": user.get("login") or "",
+            "reactions": {
+                "+1": reactions.get("+1", 0),
+                "-1": reactions.get("-1", 0),
+            },
+        }
+
+    async def _list_comments_via_api(
+        self, owner: str, repo: str, pr_number: int
+    ) -> list[dict[str, Any]]:
+        """List review comments with the REST API (first 100, newest last)."""
+        import urllib.error
+        import urllib.request
+
+        url = (
+            f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+            "/comments?per_page=100"
+        )
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        if self.github_token:
+            headers["Authorization"] = f"Bearer {self.github_token}"
+
+        request = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                payload = json.loads(response.read() or b"[]")
+        except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            logger.warning("Could not list PR comments via API: %s", exc)
+            return []
+        return payload if isinstance(payload, list) else []
+
     async def create_review(
         self,
         pr_number: int,

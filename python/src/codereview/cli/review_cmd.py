@@ -11,6 +11,7 @@ from typing import Optional
 from codereview.agents import ProjectAnalyzer, ReviewOrchestrator
 from codereview.cli.diff_parser import _parse_diff, get_git_diff, parse_git_diff_to_entries
 from codereview.core import CacheManager, ConfigLoader, LLMFactory
+from codereview.core.dedupe import MEMORY_PATH, AlreadyReportedIndex, TeamMemory, apply_dedupe
 from codereview.core.github_client import create_github_client
 from codereview.models import CacheInfo
 from codereview.output import InlineCommentBuilder, OutputGenerator
@@ -201,20 +202,13 @@ async def run_review(
     if output_path:
         output_config.report_path = output_path
 
-    generator = OutputGenerator(output_config)
-    outputs = await generator.generate(result, pr_number)
-
-    # Inline review output (S2): always expose the machine-readable findings
-    # payload, and post the line-anchored comments as a single review when a PR
-    # is known and PR commenting is enabled.
-    inline_builder = InlineCommentBuilder()
-    outputs["findings"] = inline_builder.findings_payload(result)
-
+    # S6: suppress what the PR already reports and down-weight what a human
+    # dismissed. Both are best-effort: a failed GitHub read leaves the review
+    # exactly as it would have been without this step.
+    github_client = None
+    dedupe_report = None
     if pr_number is not None and config.output.pr_comment:
-        inline_payload = inline_builder.build(result)
-        if dry_run or offline:
-            logger.info("Skipping inline review post for PR #%s (dry-run/offline)", pr_number)
-        else:
+        if not (dry_run or offline):
             try:
                 github_client = create_github_client(github_token=github_token)
             except Exception as e:
@@ -223,17 +217,54 @@ async def run_review(
                     pr_number,
                     e,
                 )
-            else:
-                try:
-                    posted = await github_client.create_review(
-                        pr_number,
-                        inline_payload["comments"],
-                        body=inline_payload["summary"],
-                    )
-                    if not posted:
-                        logger.warning("GitHub rejected inline review for PR #%s", pr_number)
-                except Exception as e:
-                    logger.warning("Failed to post inline review for PR #%s: %s", pr_number, e)
+        dedupe_report = await _dedupe_against_pr(
+            result,
+            pr_number,
+            client=github_client,
+            memory_path=Path.cwd() / MEMORY_PATH,
+            touch_network=not (dry_run or offline),
+        )
+
+    generator = OutputGenerator(output_config)
+    outputs = await generator.generate(result, pr_number)
+
+    # Inline review output (S2): always expose the machine-readable findings
+    # payload, and post the line-anchored comments as a single review when a PR
+    # is known and PR commenting is enabled.
+    inline_builder = InlineCommentBuilder()
+    outputs["findings"] = inline_builder.findings_payload(result)
+    if dedupe_report is not None:
+        outputs["dedupe"] = {
+            "already_reported": dedupe_report.already_reported,
+            "downweighted": dedupe_report.downweighted,
+        }
+
+    if pr_number is not None and config.output.pr_comment:
+        notes = dedupe_report.notes() if dedupe_report is not None else None
+        inline_payload = inline_builder.build(result, notes=notes)
+        if dry_run or offline:
+            logger.info("Skipping inline review post for PR #%s (dry-run/offline)", pr_number)
+        elif not inline_payload["comments"] and dedupe_report and dedupe_report.already_reported:
+            # Every finding this run produced is already on the PR. Posting an
+            # empty review would repeat the summary for no new information.
+            logger.info(
+                "All %d finding(s) were already reported on PR #%s; nothing to post",
+                dedupe_report.already_reported,
+                pr_number,
+            )
+        elif github_client is None:
+            logger.warning("No GitHub client; skipping inline review for PR #%s", pr_number)
+        else:
+            try:
+                posted = await github_client.create_review(
+                    pr_number,
+                    inline_payload["comments"],
+                    body=inline_payload["summary"],
+                )
+                if not posted:
+                    logger.warning("GitHub rejected inline review for PR #%s", pr_number)
+            except Exception as e:
+                logger.warning("Failed to post inline review for PR #%s: %s", pr_number, e)
 
     # Print cache stats
     if file_cache:
@@ -292,6 +323,42 @@ async def run_review(
         result_dict["merge"] = merge_output
 
     return result_dict
+async def _dedupe_against_pr(
+    result,
+    pr_number: int,
+    *,
+    client,
+    memory_path: Path,
+    touch_network: bool,
+):
+    """Drop already-reported findings and apply team memory to one result.
+
+    Args:
+        result: Review result to prune in place.
+        pr_number: PR whose existing comments are the dedupe baseline.
+        client: GitHub client, or ``None`` when one could not be created.
+        memory_path: Where the dismissal memory lives for this repository.
+        touch_network: False for dry-run/offline, which must not call GitHub.
+
+    Returns:
+        A :class:`codereview.core.dedupe.DedupeReport`.
+    """
+    comments = []
+    if client is not None and touch_network:
+        try:
+            comments = await client.list_review_comments(pr_number)
+        except Exception as e:  # noqa: BLE001 - dedupe must never fail a review
+            logger.warning("Could not read existing PR comments for dedupe: %s", e)
+
+    memory = TeamMemory.load(memory_path)
+    learned = memory.learn_from_comments(comments)
+    if learned:
+        memory.save()
+        logger.info("Team memory learned %d dismissal(s) from PR #%s reactions", learned, pr_number)
+
+    return apply_dedupe(result, AlreadyReportedIndex.from_comments(comments), memory)
+
+
 def _print_rules(json_output: bool = False) -> None:
     """Print all available detection rules.
 

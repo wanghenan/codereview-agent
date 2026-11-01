@@ -44,6 +44,9 @@ htmlcov/
 
 # CodeReview Agent
 .codereview-agent/
+# Team memory is shared knowledge, not local state: commit it so dismissals
+# apply to everyone reviewing the same repository.
+!.codereview-agent/memory.json
 *.log
 
 # Node
