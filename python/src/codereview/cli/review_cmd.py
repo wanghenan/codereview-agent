@@ -11,8 +11,9 @@ from typing import Optional
 from codereview.agents import ProjectAnalyzer, ReviewOrchestrator
 from codereview.cli.diff_parser import _parse_diff, get_git_diff, parse_git_diff_to_entries
 from codereview.core import CacheManager, ConfigLoader, LLMFactory
+from codereview.core.github_client import create_github_client
 from codereview.models import CacheInfo
-from codereview.output import OutputGenerator
+from codereview.output import InlineCommentBuilder, OutputGenerator
 
 # Try to import rule engine
 try:
@@ -84,6 +85,8 @@ async def run_review(
     github_token: str | None = None,
     merge_dry_run: bool = True,
     disabled_rules: Optional[list[str]] = None,
+    dry_run: bool = False,
+    offline: bool = False,
 ) -> dict:
     """Run the code review process.
 
@@ -100,6 +103,9 @@ async def run_review(
         auto_merge: Automatically merge PR if conditions are met
         github_token: GitHub token (overrides config)
         merge_dry_run: Dry run for auto-merge (default: True)
+        disabled_rules: Rule ids to disable
+        dry_run: Build inline review payload but do not post it
+        offline: Alias for dry-run inline behaviour; never touch the network
 
     Returns:
         Dict with review results and optionally merge result
@@ -198,6 +204,37 @@ async def run_review(
     generator = OutputGenerator(output_config)
     outputs = await generator.generate(result, pr_number)
 
+    # Inline review output (S2): always expose the machine-readable findings
+    # payload, and post the line-anchored comments as a single review when a PR
+    # is known and PR commenting is enabled.
+    inline_builder = InlineCommentBuilder()
+    outputs["findings"] = inline_builder.findings_payload(result)
+
+    if pr_number is not None and config.output.pr_comment:
+        inline_payload = inline_builder.build(result)
+        if dry_run or offline:
+            logger.info("Skipping inline review post for PR #%s (dry-run/offline)", pr_number)
+        else:
+            try:
+                github_client = create_github_client(github_token=github_token)
+            except Exception as e:
+                logger.warning(
+                    "Could not create GitHub client; skipping inline review for PR #%s: %s",
+                    pr_number,
+                    e,
+                )
+            else:
+                try:
+                    posted = await github_client.create_review(
+                        pr_number,
+                        inline_payload["comments"],
+                        body=inline_payload["summary"],
+                    )
+                    if not posted:
+                        logger.warning("GitHub rejected inline review for PR #%s", pr_number)
+                except Exception as e:
+                    logger.warning("Failed to post inline review for PR #%s: %s", pr_number, e)
+
     # Print cache stats
     if file_cache:
         stats = file_cache.get_stats()
@@ -207,7 +244,6 @@ async def run_review(
     merge_output = None
     if auto_merge and pr_number:
         from codereview.core.auto_merger import create_auto_merger
-        from codereview.core.github_client import create_github_client
 
         try:
             github_client = create_github_client(github_token=github_token)

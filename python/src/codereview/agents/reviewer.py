@@ -18,7 +18,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph
 from tqdm import tqdm
 
+from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.path_matcher import ExcludeMatcher
+from codereview.core.tool_runner import ToolRunner
 from codereview.models import (
     Config,
     DiffEntry,
@@ -213,6 +215,8 @@ class ReviewAgent:
         project_context: ProjectContext,
         rule_engine: Optional[Any] = None,
         file_cache: Optional[Any] = None,
+        tool_runner: Optional[Any] = None,
+        project_root: Optional[str | Path] = None,
     ):
         """Initialize review agent.
 
@@ -222,12 +226,16 @@ class ReviewAgent:
             project_context: Pre-analyzed project context
             rule_engine: Optional rule engine for static analysis
             file_cache: Optional file-level review cache
+            tool_runner: Optional external tool runner (defaults to ToolRunner)
+            project_root: Directory external tools run from (defaults to cwd)
         """
         self.config = config
         self.llm = llm
         self.project_context = project_context
         self.rule_engine = rule_engine
         self.file_cache = file_cache
+        self.tool_runner = tool_runner if tool_runner is not None else ToolRunner()
+        self.project_root = Path(project_root) if project_root is not None else Path.cwd()
         self.max_concurrency = config.max_concurrency
         self.timeout_seconds = config.timeout_seconds
 
@@ -447,6 +455,92 @@ class ReviewAgent:
         """
         return self._exclude_matcher.matches(filename)
 
+    def _tool_issues_for(self, filename: str) -> list[FileIssue]:
+        """Run external tools for one changed file and convert their output.
+
+        The runner is invoked only when at least one tool is available for the
+        path. Every failure (unavailable runner, spawn error, malformed output)
+        is logged and swallowed so external tooling can never abort a review.
+
+        Args:
+            filename: Repository-relative path of the file being reviewed.
+
+        Returns:
+            Tool findings converted to :class:`FileIssue` objects.
+        """
+        runner = self.tool_runner
+        if runner is None:
+            return []
+
+        paths = [filename]
+
+        try:
+            list_tools = getattr(runner, "list_tools", None)
+            available = list_tools(paths) if callable(list_tools) else None
+            if available is not None and not available:
+                return []
+
+            # A real ToolRunner reports every unavailable tool as an error
+            # entry. Scope it to the available specs so a Python-only change
+            # does not gain "eslint is not installed" noise.
+            active_runner = runner
+            if isinstance(runner, ToolRunner) and available is not None:
+                active_runner = ToolRunner(tools=available, timeout=runner.timeout)
+
+            findings = active_runner.run(paths, cwd=self.project_root)
+        except Exception as exc:
+            logger.warning("External tool analysis failed for %s: %s", filename, exc)
+            return []
+
+        issues: list[FileIssue] = []
+        for finding in findings or []:
+            if not isinstance(finding, dict):
+                continue
+            try:
+                issues.append(self._tool_finding_to_issue(filename, finding))
+            except Exception as exc:
+                logger.warning("Could not convert tool finding for %s: %s", filename, exc)
+        return issues
+
+    @staticmethod
+    def _tool_finding_to_issue(fallback_path: str, finding: dict[str, Any]) -> FileIssue:
+        """Map one normalised tool finding onto a :class:`FileIssue`."""
+        severity = str(finding.get("severity") or "").lower()
+        tool = str(finding.get("tool") or "tool")
+        rule_id = str(finding.get("rule_id") or "unknown")
+        file_path = str(finding.get("file") or fallback_path)
+
+        raw_line = finding.get("line")
+        try:
+            line_number: Optional[int] = int(raw_line) if raw_line is not None else None
+        except (TypeError, ValueError):
+            line_number = None
+        if line_number is not None and line_number <= 0:
+            line_number = None
+
+        if severity == "high":
+            category = IssueCategory.BUG
+            risk_level = RiskLevel.HIGH
+        else:
+            category = IssueCategory.MAINTAINABILITY
+            risk_level = (
+                RiskLevel.MEDIUM
+                if severity in ("error", "warning", "medium")
+                else RiskLevel.LOW
+            )
+
+        return FileIssue(
+            file_path=file_path,
+            line_number=line_number,
+            risk_level=risk_level,
+            description=str(finding.get("description") or f"{tool} reported {rule_id}"),
+            title=f"{tool}: {rule_id}",
+            category=category,
+            confidence=0.85,
+            source="tool",
+            evidence=[Evidence(kind=EvidenceKind.RULE, detail=f"{tool}_{rule_id}")],
+        )
+
     async def _review_file(self, entry: DiffEntry) -> FileReview:
         """Review a single file with timeout handling.
 
@@ -462,6 +556,10 @@ class ReviewAgent:
             static_issues = self.rule_engine.detect_in_diff(
                 entry.patch, language=self._detect_language(entry.filename)
             )
+
+        # External tools run after the rule engine; they are supplementary and
+        # must never break the review when a binary is missing or malformed.
+        tool_issues = self._tool_issues_for(entry.filename)
 
         # Build static results summary for prompt
         static_results = ""
@@ -538,6 +636,9 @@ class ReviewAgent:
                         ],
                     )
                 )
+
+            # Add external tool findings (already converted to FileIssue)
+            issues.extend(tool_issues)
 
             # Determine overall risk level
             risk_level = RiskLevel(result.get("risk_level", "low"))
@@ -690,6 +791,8 @@ class ReviewOrchestrator:
         llm: Any,
         rule_engine: Optional[Any] = None,
         file_cache: Optional[Any] = None,
+        tool_runner: Optional[Any] = None,
+        project_root: Optional[str | Path] = None,
     ):
         """Initialize orchestrator.
 
@@ -698,11 +801,15 @@ class ReviewOrchestrator:
             llm: LangChain LLM instance
             rule_engine: Optional rule engine for static analysis
             file_cache: Optional file-level review cache
+            tool_runner: Optional external tool runner (defaults to ToolRunner)
+            project_root: Directory external tools run from (defaults to cwd)
         """
         self.config = config
         self.llm = llm
         self.rule_engine = rule_engine
         self.file_cache = file_cache
+        self.tool_runner = tool_runner
+        self.project_root = Path(project_root) if project_root is not None else Path.cwd()
 
     def create_graph(self) -> StateGraph:
         """Create LangGraph for the full review workflow.
@@ -752,6 +859,8 @@ class ReviewOrchestrator:
             project_context,
             rule_engine=self.rule_engine,
             file_cache=self.file_cache,
+            tool_runner=self.tool_runner,
+            project_root=self.project_root,
         )
 
         file_reviews = await agent.review_files(diff_entries)
@@ -781,11 +890,25 @@ class ReviewOrchestrator:
         Returns:
             Complete review result
         """
+        # Admission filter (S3): drop binaries, generated/lock files,
+        # configured excludes, and files over the token budget before any
+        # (paid) model work happens. ReviewAgent keeps its own exclude check
+        # for callers that use it directly.
+        filter_config = FilterConfig(
+            extra_skip_patterns=list(self.config.exclude_patterns),
+        )
+        kept_entries, skipped = filter_entries(diff_entries, filter_config)
+        logger.info(
+            "Admission filter kept %d file(s), skipped %d",
+            len(kept_entries),
+            len(skipped),
+        )
+
         graph = self.create_graph()
 
         initial_state = OrchestratorState(
             config=self.config,
-            diff_entries=diff_entries,
+            diff_entries=kept_entries,
             project_context=project_context,
             file_reviews=[],
             review_complete=False,
@@ -798,6 +921,7 @@ class ReviewOrchestrator:
             confidence=result_state["confidence"],
             files_reviewed=result_state["file_reviews"],
             summary=result_state["summary"],
+            skipped=skipped,
         )
 
     def _calculate_result(self, file_reviews: list[FileReview]) -> tuple[ReviewConclusion, float]:
