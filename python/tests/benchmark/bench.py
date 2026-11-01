@@ -102,6 +102,9 @@ def findings_of(result: dict[str, Any]) -> list[dict[str, Any]]:
                     "file": issue.get("file_path") or review.get("file_path"),
                     "line": issue.get("line_number"),
                     "severity": issue.get("risk_level"),
+                    "confidence": issue.get("confidence"),
+                    "source": issue.get("source"),
+                    "category": issue.get("category"),
                     "description": (issue.get("description") or "").strip(),
                     "suggestion": (issue.get("suggestion") or "").strip(),
                 }
@@ -135,7 +138,12 @@ def pair(case: dict[str, Any], findings: list[dict[str, Any]]) -> list[dict[str,
 def _fmt_finding(row: dict[str, Any]) -> str:
     loc = f"{row['file']}:{row['line']}" if row["line"] else row["file"]
     delta = f" Δ{row['delta']}" if row.get("delta") is not None else ""
-    return f"- `{loc}`{delta} [{row['severity']}] {row['description'][:160]}"
+    conf = row.get("confidence")
+    conf_text = f" conf={conf:.2f}" if isinstance(conf, (int, float)) else ""
+    return (
+        f"- `{loc}`{delta} [{row['severity']}{conf_text} src={row.get('source')}"
+        f"/{row.get('category')}] {row['description'][:160]}"
+    )
 
 
 def render(results: list[dict[str, Any]], out: Path) -> str:
