@@ -22,8 +22,11 @@ from codereview.core.path_matcher import ExcludeMatcher
 from codereview.models import (
     Config,
     DiffEntry,
+    Evidence,
+    EvidenceKind,
     FileIssue,
     FileReview,
+    IssueCategory,
     ProjectContext,
     ReviewConclusion,
     ReviewResult,
@@ -133,8 +136,12 @@ Analyze this code change and provide a risk assessment in JSON format:
         {{
             "line_number": 123,
             "risk_level": "high|medium|low",
+            "category": "bug|security|perf|maintainability|style",
+            "title": "One-line summary of the finding",
             "description": "Issue description",
-            "suggestion": "How to fix"
+            "suggestion": "How to fix",
+            "confidence": 0.0,
+            "evidence": ["symbol, rule id, or file:line that proves it"]
         }}
     ],
     "summary": "Brief summary of the review"
@@ -147,6 +154,10 @@ Guidelines:
 - risk_level must be exactly "high", "medium", or "low"
 - issues must always be a list (empty [] if no issues)
 - Be strict but fair. Focus on real issues, not style preferences.
+- category is one of bug / security / perf / maintainability / style
+- confidence is a number between 0 and 1 (how sure you are the issue is real)
+- evidence lists concrete anchors (symbol names, line numbers, rule ids); an
+  issue without any anchor is speculation and should be left out
 
 ## Examples
 
@@ -359,6 +370,51 @@ class ReviewAgent:
             ],
         )
 
+    @staticmethod
+    def _to_finding(file_path: str, raw: dict[str, Any]) -> FileIssue:
+        """Map one LLM issue dict onto :class:`FileIssue`.
+
+        Unknown/malformed optional fields fall back to defaults rather than
+        dropping the whole finding: a review result is more useful with a
+        partially populated issue than with nothing.
+        """
+
+        def _enum(value: Any, enum_type: Any, default: Any) -> Any:
+            try:
+                return enum_type(value)
+            except (TypeError, ValueError):
+                return default
+
+        evidence: list[Evidence] = []
+        for item in raw.get("evidence") or []:
+            if isinstance(item, str) and item.strip():
+                evidence.append(Evidence(kind=EvidenceKind.CONTEXT, detail=item.strip()))
+            elif isinstance(item, dict) and item.get("detail"):
+                evidence.append(
+                    Evidence(
+                        kind=_enum(item.get("kind"), EvidenceKind, EvidenceKind.CONTEXT),
+                        detail=str(item["detail"]),
+                    )
+                )
+
+        confidence = raw.get("confidence")
+        if not isinstance(confidence, (int, float)):
+            confidence = 0.5
+
+        return FileIssue(
+            file_path=file_path,
+            line_number=raw.get("line_number"),
+            end_line=raw.get("end_line"),
+            risk_level=_enum(raw.get("risk_level", "low"), RiskLevel, RiskLevel.LOW),
+            description=raw.get("description", ""),
+            suggestion=raw.get("suggestion"),
+            title=str(raw.get("title") or "")[:200],
+            category=_enum(raw.get("category"), IssueCategory, IssueCategory.BUG),
+            confidence=max(0.0, min(1.0, float(confidence))),
+            evidence=evidence,
+            source="llm",
+        )
+
     def _build_context_summary(self) -> str:
         """Build a compact project context summary to reduce token usage.
 
@@ -454,14 +510,7 @@ class ReviewAgent:
 
             # Parse result into FileReview
             issues = [
-                FileIssue(
-                    file_path=entry.filename,
-                    line_number=issue.get("line_number"),
-                    risk_level=RiskLevel(issue.get("risk_level", "low")),
-                    description=issue.get("description", ""),
-                    suggestion=issue.get("suggestion"),
-                )
-                for issue in result.get("issues", [])
+                self._to_finding(entry.filename, issue) for issue in result.get("issues", [])
             ]
 
             # Add static analysis issues
@@ -473,6 +522,20 @@ class ReviewAgent:
                         risk_level=RiskLevel(static_issue.get("severity", "low")),
                         description=f"[Rule: {static_issue.get('rule_name')}] {static_issue.get('description', '')}",
                         suggestion=static_issue.get("suggestion"),
+                        title=str(static_issue.get("rule_name") or "rule hit"),
+                        category=IssueCategory.SECURITY,
+                        confidence=0.9,
+                        source="rule",
+                        evidence=[
+                            Evidence(
+                                kind=EvidenceKind.RULE,
+                                detail=str(
+                                    static_issue.get("rule_id")
+                                    or static_issue.get("rule_name")
+                                    or "unknown-rule"
+                                ),
+                            )
+                        ],
                     )
                 )
 

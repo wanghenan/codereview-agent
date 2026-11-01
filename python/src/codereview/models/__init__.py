@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RiskLevel(str, Enum):
@@ -35,14 +35,79 @@ class MergeMethod(str, Enum):
     REBASE = "rebase"
 
 
+class IssueCategory(str, Enum):
+    """Category of a review finding, used for filtering and reporting."""
+
+    BUG = "bug"
+    SECURITY = "security"
+    PERF = "perf"
+    MAINTAINABILITY = "maintainability"
+    STYLE = "style"
+
+
+class EvidenceKind(str, Enum):
+    """Where a finding's evidence comes from."""
+
+    RULE = "rule"
+    SYMBOL = "symbol"
+    CONTEXT = "context"
+    DIFF = "diff"
+
+
+class Evidence(BaseModel):
+    """One concrete anchor backing a finding.
+
+    A finding without evidence is a claim; the anchors are what make it
+    reviewable and what allow later stages to dedupe or hand it to an agent.
+    """
+
+    kind: EvidenceKind
+    detail: str = Field(min_length=1, description="Rule id, symbol, or file:line reference")
+
+
 class FileIssue(BaseModel):
-    """An issue found in a file during review."""
+    """An issue found in a file during review.
+
+    Also serves as the ``Finding`` model: ``title``/``category``/``confidence``/
+    ``evidence``/``suggested_patch``/``source`` are the S1 additions. They all
+    default, so existing producers and cached payloads keep validating.
+    """
 
     file_path: str
     line_number: Optional[int] = None
     risk_level: RiskLevel
     description: str
     suggestion: Optional[str] = None
+
+    # --- S1 fields (all optional for backwards compatibility) --------------
+    title: str = ""
+    end_line: Optional[int] = None
+    category: IssueCategory = IssueCategory.BUG
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    evidence: list[Evidence] = Field(default_factory=list)
+    suggested_patch: Optional[str] = None
+    source: Literal["rule", "tool", "llm"] = "llm"
+
+    @model_validator(mode="after")
+    def _check_line_range(self) -> FileIssue:
+        """Reject a range whose end precedes its start."""
+        if self.end_line is not None and self.line_number is not None:
+            if self.end_line < self.line_number:
+                raise ValueError("end_line must not be before line_number")
+        return self
+
+    def dedupe_key(self) -> tuple[str, int, str]:
+        """Return the key used to suppress duplicate findings across runs.
+
+        Line numbers are bucketed by 10 so small shifts do not create repeats.
+        """
+        bucket = (self.line_number or 0) // 10
+        label = (self.title or self.description).strip().lower()[:80]
+        return (self.file_path, bucket, label)
+
+
+# The plan (docs/CODE_REVIEW_UPGRADE_PLAN.md) calls this model ``Finding``.
+Finding = FileIssue
 
 
 class FileReview(BaseModel):

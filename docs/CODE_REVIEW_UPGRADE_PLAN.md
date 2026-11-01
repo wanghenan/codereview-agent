@@ -120,3 +120,15 @@
 | 行内评论刷屏被团队关掉 | S2 就限量 + 排序；S6 补去重 |
 | 外部工具引入沙箱复杂度（S4） | 先子进程 + 超时，容器化留到需要时 |
 | LangGraph 状态难测 | 每个节点独立单测，节点间只传显式字段 |
+
+---
+
+## 6. 进度
+
+| 切片 | 状态 | 说明 |
+|---|---|---|
+| S0 评估集 | ✅ 已提交 `cea5326` | 24 注入正例 + 6 负例 + `gen_cases.py` / `bench.py` |
+| S1 Finding 模型 | 🚧 本地完成待提交 | `FileIssue` 增加 `title/end_line/category/confidence/evidence/suggested_patch/source` + `dedupe_key()`；LLM 输出经 `_to_finding` 归一化；规则命中标记 `source="rule"` 并带规则证据；prompt 已要求 category/confidence/evidence |
+| S2 行内评论 | ⏳ | 新增文件；待基线跑分后再定 top-N 限额 |
+| S3 准入层 | ⏳ | |
+| S4 工具接入 | ⏳ | 先删 `core/languages/*` 与 `complexity_scorer.py` |
