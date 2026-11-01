@@ -391,3 +391,42 @@ def test_rebuild_replaces_previous_index(tmp_path: Path) -> None:
     assert index.lookup("one") == []
     assert index.lookup("two") != []
     assert index.symbols_in("one.py") == []
+
+
+def test_method_change_ignores_class_instantiation_as_caller(tmp_path):
+    """Instantiating a class must not count as calling one of its methods."""
+    _write(
+        tmp_path,
+        "pkg/mod.py",
+        """
+        class Runner:
+            def run(self, cwd):
+                return cwd
+        """,
+    )
+    _write(
+        tmp_path,
+        "pkg/make_runner.py",
+        """
+        from pkg.mod import Runner
+
+        runner = Runner()
+        """,
+    )
+    _write(
+        tmp_path,
+        "pkg/use_runner.py",
+        """
+        from pkg.mod import Runner
+
+        def go(runner: Runner):
+            return runner.run(cwd=".")
+        """,
+    )
+
+    index = SymbolIndex()
+    index.build(tmp_path, ["pkg/mod.py", "pkg/make_runner.py", "pkg/use_runner.py"])
+    neighbors = index.neighbors("pkg/mod.py", 3, 3, limit=5)
+
+    callers = [neighbor.path for neighbor in neighbors if neighbor.reason == "caller"]
+    assert callers == ["pkg/use_runner.py"]

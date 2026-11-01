@@ -142,7 +142,7 @@ def _fmt_finding(row: dict[str, Any]) -> str:
     conf_text = f" conf={conf:.2f}" if isinstance(conf, (int, float)) else ""
     return (
         f"- `{loc}`{delta} [{row['severity']}{conf_text} src={row.get('source')}"
-        f"/{row.get('category')}] {row['description'][:160]}"
+        f"/{row.get('category')}] {row['description'][:600]}"
     )
 
 

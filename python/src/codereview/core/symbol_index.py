@@ -352,10 +352,23 @@ class SymbolIndex:
             return []
 
         rel_path = self._relative(path)
-        target_symbols = [
+        overlapping = [
             symbol
             for symbol in self._symbols_by_path.get(rel_path, [])
             if symbol.start_line <= end_line and symbol.end_line >= start_line
+        ]
+        # Keep only the innermost symbols. A change inside a method also
+        # overlaps its class, and treating the class as a target turns every
+        # ``MyClass(...)`` instantiation into a bogus "caller" of the method.
+        target_symbols = [
+            symbol
+            for symbol in overlapping
+            if not any(
+                other is not symbol
+                and other.start_line >= symbol.start_line
+                and other.end_line <= symbol.end_line
+                for other in overlapping
+            )
         ]
         target_names = {symbol.name for symbol in target_symbols}
 

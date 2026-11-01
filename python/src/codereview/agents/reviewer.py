@@ -870,7 +870,12 @@ class ReviewAgent:
         - {critical_paths}: List of critical paths
         - {exclude_patterns}: List of exclude patterns
         - {static_results}: Static analysis results
-        - {cross_file_context}: Bounded cross-file symbol context (may be empty)
+        - {cross_file_context}: Bounded cross-file symbol context (may be empty).
+  If the change renames or changes the signature of something that other code
+  calls, and the context shows the caller, name that caller using the exact
+  `path:line` from the context header (for example "still called at
+  src/app/caller.py:42"). Do not speculate about callers the context does not
+  show; say "callers not shown" instead.
         - {filename}: Current file being reviewed
         - {status}: File status (added/modified/deleted)
         - {additions}: Number of lines added
