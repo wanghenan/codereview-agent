@@ -233,6 +233,38 @@ class ConfigFilters(BaseModel):
     )
 
 
+class ConfigContext(BaseModel):
+    """Cross-file symbol context configuration (S5).
+
+    The defaults enable one-hop neighbour injection, but the feature is
+    deliberately best-effort: a missing index with ``auto_build`` off simply
+    leaves the prompt unchanged.
+    """
+
+    neighbors: bool = Field(
+        default=True,
+        description="Inject one-hop symbol neighbours into review prompts",
+    )
+    max_neighbors: int = Field(
+        default=3,
+        ge=0,
+        description="Maximum related symbols included per reviewed file",
+    )
+    max_chars: int = Field(
+        default=2400,
+        ge=0,
+        description="Maximum size of the cross-file context section",
+    )
+    index_path: str = Field(
+        default=".codereview-agent/index.json",
+        description="Repository-relative path of the persisted symbol index",
+    )
+    auto_build: bool = Field(
+        default=True,
+        description="Build and save the index when it is missing or stale",
+    )
+
+
 class AutoMergeConditions(BaseModel):
     """Conditions for auto merge."""
 
@@ -276,6 +308,7 @@ class Config(BaseModel):
     exclude_patterns: list[str] = Field(default_factory=list)
     cache: ConfigCache = Field(default_factory=ConfigCache)
     filters: ConfigFilters = Field(default_factory=ConfigFilters)
+    context: ConfigContext = Field(default_factory=ConfigContext)
     custom_prompt_path: Optional[str] = None
     output: OutputConfig = Field(default_factory=OutputConfig)
     max_concurrency: int = Field(default=5, ge=1, le=50)

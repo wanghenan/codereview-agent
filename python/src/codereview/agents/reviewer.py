@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
@@ -21,6 +22,7 @@ from tqdm import tqdm
 from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.finding_filter import FilterRules, filter_findings
 from codereview.core.path_matcher import ExcludeMatcher
+from codereview.core.symbol_index import Neighbor, SymbolIndex
 from codereview.core.tool_runner import ToolRunner
 from codereview.models import (
     Config,
@@ -38,6 +40,27 @@ from codereview.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Directories ignored while looking for the newest Python source.  Kept in
+#: sync with ``codereview.core.symbol_index`` so freshness checks see the same
+#: tree the index would build from.
+_INDEX_IGNORED_DIRS = {
+    ".codereview-agent",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "venv",
+}
+
+#: New-file range from a unified-diff hunk header, e.g. ``@@ -1,3 +1,5 @@``.
+_HUNK_RANGE_RE = re.compile(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 # Try to import rule engine
 try:
@@ -95,6 +118,40 @@ def _extract_balanced_object(text: str) -> Optional[str]:
     return None
 
 
+def _raise_os_error(error: OSError) -> None:
+    """Surface ``os.walk`` errors so callers can degrade explicitly."""
+    raise error
+
+
+def _newest_python_mtime(root: Path) -> tuple[float, int]:
+    """Return the newest Python mtime and the number of files under ``root``.
+
+    Directory traversal errors propagate as ``OSError``; individual files that
+    cannot be stat'ed are skipped so one broken symlink does not hide an
+    otherwise usable tree.
+    """
+    newest = 0.0
+    count = 0
+
+    for current, dirs, files in os.walk(root, onerror=_raise_os_error):
+        dirs[:] = sorted(
+            name for name in dirs if name not in _INDEX_IGNORED_DIRS and not name.startswith(".")
+        )
+        for name in files:
+            if not name.endswith(".py"):
+                continue
+            path = Path(current) / name
+            try:
+                mtime = path.stat().st_mtime
+            except OSError as exc:
+                logger.debug("Could not stat Python source %s: %s", path, exc)
+                continue
+            newest = max(newest, mtime)
+            count += 1
+
+    return newest, count
+
+
 # State for the review orchestrator graph
 class OrchestratorState(TypedDict, total=False):
     """State for the review orchestrator graph."""
@@ -102,6 +159,7 @@ class OrchestratorState(TypedDict, total=False):
     config: Config
     diff_entries: list[DiffEntry]
     project_context: ProjectContext | None
+    symbol_index: SymbolIndex | None
     file_reviews: list[FileReview]
     conclusion: ReviewConclusion | None
     confidence: float
@@ -124,6 +182,8 @@ and identify potential issues.
 
 ## Static Analysis Results
 {static_results}
+
+{cross_file_context}
 
 ## Code Diff
 File: {filename}
@@ -219,6 +279,7 @@ class ReviewAgent:
         file_cache: Optional[Any] = None,
         tool_runner: Optional[Any] = None,
         project_root: Optional[str | Path] = None,
+        symbol_index: Optional[SymbolIndex] = None,
     ):
         """Initialize review agent.
 
@@ -230,6 +291,7 @@ class ReviewAgent:
             file_cache: Optional file-level review cache
             tool_runner: Optional external tool runner (defaults to ToolRunner)
             project_root: Directory external tools run from (defaults to cwd)
+            symbol_index: Optional pre-built symbol index for cross-file context
         """
         self.config = config
         self.llm = llm
@@ -238,6 +300,7 @@ class ReviewAgent:
         self.file_cache = file_cache
         self.tool_runner = tool_runner if tool_runner is not None else ToolRunner()
         self.project_root = Path(project_root) if project_root is not None else Path.cwd()
+        self.symbol_index = symbol_index
         self.max_concurrency = config.max_concurrency
         self.timeout_seconds = config.timeout_seconds
 
@@ -448,6 +511,89 @@ class ReviewAgent:
 
         return "\n".join(parts) if parts else "General project"
 
+    @staticmethod
+    def _changed_range(entry: DiffEntry) -> Optional[tuple[int, int]]:
+        """Return the inclusive new-file line range touched by ``entry``.
+
+        A unified diff may contain several hunks; the union of their new-file
+        ranges is used so one symbol index lookup covers the whole change.
+        Entries without a parseable hunk (for example ``patch=None``) have no
+        well-defined changed range and yield ``None``.
+        """
+        if not entry.patch:
+            return None
+
+        ranges: list[tuple[int, int]] = []
+        for match in _HUNK_RANGE_RE.finditer(entry.patch):
+            start = int(match.group(1))
+            count = int(match.group(2) or 1)
+            end = start + count - 1 if count > 0 else start
+            ranges.append((start, end))
+
+        if not ranges:
+            return None
+        return min(start for start, _ in ranges), max(end for _, end in ranges)
+
+    def _cross_file_context_for(self, entry: DiffEntry) -> str:
+        """Render bounded one-hop neighbours for the file under review.
+
+        Returns an empty string whenever cross-file context is disabled, the
+        index is absent/empty, the diff has no usable range, or lookup fails.
+        Context injection is best-effort and must never abort a review.
+        """
+        if self.symbol_index is None:
+            return ""
+
+        context_config = self.config.context
+        if (
+            not context_config.neighbors
+            or context_config.max_neighbors <= 0
+            or context_config.max_chars <= 0
+        ):
+            return ""
+
+        changed = self._changed_range(entry)
+        if changed is None:
+            return ""
+
+        try:
+            neighbors = self.symbol_index.neighbors(
+                entry.filename,
+                changed[0],
+                changed[1],
+                limit=context_config.max_neighbors,
+            )
+        except Exception as exc:
+            logger.warning("Could not collect cross-file context for %s: %s", entry.filename, exc)
+            return ""
+
+        return self._format_cross_file_context(
+            list(neighbors)[: context_config.max_neighbors],
+            context_config.max_chars,
+        )
+
+    @staticmethod
+    def _format_cross_file_context(neighbors: list[Neighbor], max_chars: int) -> str:
+        """Format neighbours compactly, truncating the tail to ``max_chars``."""
+        if not neighbors or max_chars <= 0:
+            return ""
+
+        blocks = [
+            (
+                f"{neighbor.reason} {neighbor.path}:"
+                f"{neighbor.start_line}-{neighbor.end_line}\n{neighbor.excerpt}"
+            )
+            for neighbor in neighbors
+        ]
+        text = "## Cross-file context\n\n" + "\n\n".join(blocks)
+        if len(text) <= max_chars:
+            return text
+
+        note = "\n... [truncated]"
+        if max_chars <= len(note):
+            return text[:max_chars]
+        return text[: max_chars - len(note)].rstrip() + note
+
     def _should_exclude(self, filename: str) -> bool:
         """Check if file should be excluded from review.
 
@@ -570,6 +716,7 @@ class ReviewAgent:
             for issue in static_issues:
                 static_results += f"- [{issue['severity'].upper()}] {issue['description']} (Line {issue['line_number']})\n"
 
+        cross_file_context = self._cross_file_context_for(entry)
         prompt = self._build_prompt(entry)
         chain = prompt | self.llm | JsonOutputParser()
 
@@ -582,6 +729,7 @@ class ReviewAgent:
                         "critical_paths": "\n".join(self.project_context.critical_paths[:10]),
                         "exclude_patterns": "\n".join(self.config.exclude_patterns[:5]),
                         "static_results": static_results,
+                        "cross_file_context": cross_file_context,
                         "filename": entry.filename,
                         "status": entry.status,
                         "additions": entry.additions,
@@ -722,6 +870,7 @@ class ReviewAgent:
         - {critical_paths}: List of critical paths
         - {exclude_patterns}: List of exclude patterns
         - {static_results}: Static analysis results
+        - {cross_file_context}: Bounded cross-file symbol context (may be empty)
         - {filename}: Current file being reviewed
         - {status}: File status (added/modified/deleted)
         - {additions}: Number of lines added
@@ -744,7 +893,7 @@ class ReviewAgent:
 
         return ChatPromptTemplate.from_messages(
             [("system", prompt_template), ("user", """Review this code change.""")]
-        )
+        ).partial(cross_file_context="")
 
     def _is_critical_path(self, filename: str) -> bool:
         """Check if file is in a critical path."""
@@ -795,6 +944,7 @@ class ReviewOrchestrator:
         file_cache: Optional[Any] = None,
         tool_runner: Optional[Any] = None,
         project_root: Optional[str | Path] = None,
+        symbol_index: Optional[SymbolIndex] = None,
     ):
         """Initialize orchestrator.
 
@@ -805,6 +955,7 @@ class ReviewOrchestrator:
             file_cache: Optional file-level review cache
             tool_runner: Optional external tool runner (defaults to ToolRunner)
             project_root: Directory external tools run from (defaults to cwd)
+            symbol_index: Optional pre-built index (skips load/build for this run)
         """
         self.config = config
         self.llm = llm
@@ -812,6 +963,7 @@ class ReviewOrchestrator:
         self.file_cache = file_cache
         self.tool_runner = tool_runner
         self.project_root = Path(project_root) if project_root is not None else Path.cwd()
+        self.symbol_index = symbol_index
 
     def create_graph(self) -> StateGraph:
         """Create LangGraph for the full review workflow.
@@ -863,6 +1015,7 @@ class ReviewOrchestrator:
             file_cache=self.file_cache,
             tool_runner=self.tool_runner,
             project_root=self.project_root,
+            symbol_index=state.get("symbol_index"),
         )
 
         file_reviews = await agent.review_files(diff_entries)
@@ -906,12 +1059,17 @@ class ReviewOrchestrator:
             len(skipped),
         )
 
+        symbol_index = self.symbol_index
+        if symbol_index is None and kept_entries:
+            symbol_index = self._load_or_build_symbol_index()
+
         graph = self.create_graph()
 
         initial_state = OrchestratorState(
             config=self.config,
             diff_entries=kept_entries,
             project_context=project_context,
+            symbol_index=symbol_index,
             file_reviews=[],
             review_complete=False,
         )
@@ -931,6 +1089,99 @@ class ReviewOrchestrator:
             skipped=skipped,
             filtered=filtered,
         )
+
+    def _load_or_build_symbol_index(self) -> Optional[SymbolIndex]:
+        """Load or build the symbol index once for a review run.
+
+        A persisted index is reused when it is at least as new as the newest
+        Python source.  Otherwise it is rebuilt and saved when
+        ``context.auto_build`` is enabled.  Every failure path logs a warning
+        and returns ``None`` so cross-file context is simply omitted.
+        """
+        context_config = self.config.context
+        if not context_config.neighbors:
+            return None
+
+        root = self.project_root
+        if not root.is_dir():
+            logger.warning("Project root %s is not a readable directory; skipping symbol index", root)
+            return None
+
+        try:
+            newest_source_mtime, source_files = _newest_python_mtime(root)
+        except OSError as exc:
+            logger.warning("Could not scan %s for Python sources: %s", root, exc)
+            return None
+
+        if source_files == 0:
+            logger.debug("No Python sources under %s; skipping symbol index", root)
+            return None
+
+        index_path = Path(context_config.index_path)
+        if not index_path.is_absolute():
+            index_path = root / index_path
+
+        if index_path.is_file():
+            try:
+                index_is_fresh = index_path.stat().st_mtime >= newest_source_mtime
+            except OSError as exc:
+                logger.warning("Could not stat symbol index %s: %s", index_path, exc)
+                index_is_fresh = False
+
+            if index_is_fresh:
+                # A corrupt fresh index must not trigger a rebuild: the caller
+                # gets no cross-file context and a visible warning.
+                return self._load_symbol_index(index_path)
+
+            if not context_config.auto_build:
+                logger.warning(
+                    "Symbol index %s is older than the newest Python source and "
+                    "context.auto_build is disabled; continuing without cross-file context",
+                    index_path,
+                )
+                return None
+
+        if not context_config.auto_build:
+            logger.debug(
+                "Symbol index %s is missing and context.auto_build is disabled",
+                index_path,
+            )
+            return None
+
+        try:
+            index = SymbolIndex()
+            index.build(root)
+        except Exception as exc:
+            logger.warning("Could not build symbol index under %s: %s", root, exc)
+            return None
+
+        try:
+            index.save(index_path)
+        except Exception as exc:
+            logger.warning("Could not save symbol index to %s: %s", index_path, exc)
+
+        return index
+
+    @staticmethod
+    def _load_symbol_index(path: Path) -> Optional[SymbolIndex]:
+        """Load a persisted index, returning ``None`` when it is unusable."""
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
+            logger.warning("Could not load symbol index %s: %s", path, exc)
+            return None
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("symbols"), list):
+            logger.warning("Ignoring malformed symbol index %s", path)
+            return None
+
+        try:
+            index = SymbolIndex()
+            index.load(path)
+            return index
+        except Exception as exc:
+            logger.warning("Could not load symbol index %s: %s", path, exc)
+            return None
 
     def _filter_findings(
         self, file_reviews: list[FileReview]
