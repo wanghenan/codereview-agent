@@ -19,6 +19,7 @@ from langgraph.graph import END, StateGraph
 from tqdm import tqdm
 
 from codereview.core.diff_filter import FilterConfig, filter_entries
+from codereview.core.finding_filter import FilterRules, filter_findings
 from codereview.core.path_matcher import ExcludeMatcher
 from codereview.core.tool_runner import ToolRunner
 from codereview.models import (
@@ -28,6 +29,7 @@ from codereview.models import (
     EvidenceKind,
     FileIssue,
     FileReview,
+    FilteredFinding,
     IssueCategory,
     ProjectContext,
     ReviewConclusion,
@@ -916,13 +918,62 @@ class ReviewOrchestrator:
 
         result_state = await graph.ainvoke(initial_state)
 
+        # Noise filter (S4): every review node has finished, so this is the
+        # last point where findings can be dropped before the result is
+        # returned and rendered.
+        file_reviews, filtered = self._filter_findings(result_state["file_reviews"])
+
         return ReviewResult(
             conclusion=result_state["conclusion"],
             confidence=result_state["confidence"],
-            files_reviewed=result_state["file_reviews"],
+            files_reviewed=file_reviews,
             summary=result_state["summary"],
             skipped=skipped,
+            filtered=filtered,
         )
+
+    def _filter_findings(
+        self, file_reviews: list[FileReview]
+    ) -> tuple[list[FileReview], list[FilteredFinding]]:
+        """Apply the configured noise filter to every file review.
+
+        File reviews whose findings all survive are returned unchanged. A
+        review with at least one dropped finding is copied with the reduced
+        issue list, so cached/shared review objects are never mutated.
+
+        Args:
+            file_reviews: Reviews produced by the review nodes.
+
+        Returns:
+            ``(kept_reviews, filtered)`` where ``filtered`` records every
+            dropped finding and the rule that rejected it.
+        """
+        filters = self.config.filters
+        rules = FilterRules(
+            min_confidence=filters.min_confidence,
+            drop_low_risk_llm=filters.drop_low_risk_llm,
+            drop_categories=tuple(filters.drop_categories),
+        )
+
+        updated: list[FileReview] = []
+        filtered: list[FilteredFinding] = []
+
+        for review in file_reviews:
+            kept, dropped = filter_findings(review.issues, rules)
+            if dropped:
+                updated.append(review.model_copy(update={"issues": kept}))
+                filtered.extend(dropped)
+            else:
+                updated.append(review)
+
+        if filtered:
+            logger.info(
+                "Noise filter dropped %d finding(s) from %d file review(s)",
+                len(filtered),
+                len(file_reviews),
+            )
+
+        return updated, filtered
 
     def _calculate_result(self, file_reviews: list[FileReview]) -> tuple[ReviewConclusion, float]:
         """Calculate review conclusion and confidence.

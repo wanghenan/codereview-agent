@@ -154,6 +154,12 @@ cache:
   ttl: 7  # Cache validity in days (1-30)
   forceRefresh: false  # Force cache refresh
 
+# Noise filter for review findings (all rules default to disabled)
+filters:
+  minConfidence: 0.5  # Drop LLM findings below this confidence (0 disables)
+  dropLowRiskLlm: false  # Drop low-risk findings produced by the LLM
+  dropCategories: []  # e.g. [style] - applied to rule/tool/LLM findings alike
+
 # Output configuration
 output:
   prComment: true  # Post comment on PR

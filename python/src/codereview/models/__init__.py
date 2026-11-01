@@ -110,6 +110,18 @@ class FileIssue(BaseModel):
 Finding = FileIssue
 
 
+class FilteredFinding(BaseModel):
+    """A finding removed by the noise filter, with the rule that dropped it.
+
+    Keeping the dropped finding (rather than only a count) lets callers audit
+    why a finding disappeared and, later, compute per-rule false-positive
+    rates without re-running the review.
+    """
+
+    reason: Literal["low-confidence", "low-risk-llm", "category"]
+    issue: FileIssue
+
+
 class FileReview(BaseModel):
     """Review result for a single file."""
 
@@ -149,6 +161,10 @@ class ReviewResult(BaseModel):
     skipped: list[SkipRecord] = Field(
         default_factory=list,
         description="Diff entries filtered out before review (S3 admission layer)",
+    )
+    filtered: list[FilteredFinding] = Field(
+        default_factory=list,
+        description="Findings removed by the noise filter after review (S4)",
     )
 
 
@@ -193,6 +209,30 @@ class ConfigCache(BaseModel):
     force_refresh: bool = False
 
 
+class ConfigFilters(BaseModel):
+    """Noise-filter configuration for findings.
+
+    ``min_confidence`` defaults to 0.5: the S0 baseline showed that dropping
+    LLM findings below 0.5 removes one of six noise cases without losing any
+    true positive. The other two rules stay off by default.
+    """
+
+    min_confidence: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Drop LLM findings below this confidence (0 disables)",
+    )
+    drop_low_risk_llm: bool = Field(
+        default=False,
+        description="Drop low-risk findings produced by the LLM",
+    )
+    drop_categories: list[str] = Field(
+        default_factory=list,
+        description="Drop findings in these categories, regardless of source",
+    )
+
+
 class AutoMergeConditions(BaseModel):
     """Conditions for auto merge."""
 
@@ -235,6 +275,7 @@ class Config(BaseModel):
     critical_paths: list[str] = Field(default_factory=list)
     exclude_patterns: list[str] = Field(default_factory=list)
     cache: ConfigCache = Field(default_factory=ConfigCache)
+    filters: ConfigFilters = Field(default_factory=ConfigFilters)
     custom_prompt_path: Optional[str] = None
     output: OutputConfig = Field(default_factory=OutputConfig)
     max_concurrency: int = Field(default=5, ge=1, le=50)
