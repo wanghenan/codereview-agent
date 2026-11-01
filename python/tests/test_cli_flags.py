@@ -1,9 +1,9 @@
-"""Tests for CLI flags: --version and --clear-cache."""
+"""Tests for CLI flags: --version, --clear-cache, --dry-run and --offline."""
 
 from __future__ import annotations
 
 import sys
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -120,6 +120,61 @@ class TestClearCacheFlag:
                 assert result is not None
             except SystemExit:
                 pass
+
+
+class TestDryRunOfflineFlags:
+    """Tests for the --dry-run / --offline review switches."""
+
+    @staticmethod
+    def _run_main(argv):
+        """Run the review CLI with ``run_review`` mocked out."""
+        from codereview import cli
+
+        mock_run_review = AsyncMock(return_value={"result": {"files_reviewed": []}, "outputs": {}})
+        with patch.object(sys, "argv", argv):
+            with patch.object(cli, "run_review", mock_run_review):
+                result = cli.main()
+
+        assert result == 0
+        return mock_run_review
+
+    def test_dry_run_flag_forwarded_to_run_review(self):
+        """--dry-run must reach run_review as dry_run=True."""
+        mock_run_review = self._run_main(["codereview", "--dry-run"])
+
+        kwargs = mock_run_review.await_args.kwargs
+        assert kwargs["dry_run"] is True
+        assert kwargs["offline"] is False
+
+    def test_offline_flag_forwarded_to_run_review(self):
+        """--offline must reach run_review as offline=True."""
+        mock_run_review = self._run_main(["codereview", "--offline"])
+
+        kwargs = mock_run_review.await_args.kwargs
+        assert kwargs["offline"] is True
+        assert kwargs["dry_run"] is False
+
+    def test_flags_default_to_false(self):
+        """Both switches default to False when omitted."""
+        mock_run_review = self._run_main(["codereview"])
+
+        kwargs = mock_run_review.await_args.kwargs
+        assert kwargs["dry_run"] is False
+        assert kwargs["offline"] is False
+
+    def test_help_documents_both_flags(self, capsys):
+        """--help must list both switches and explain how they differ."""
+        from codereview.cli import main
+
+        with patch.object(sys, "argv", ["codereview", "--help"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "--dry-run" in out
+        assert "--offline" in out
+        assert "network" in out
 
 
 if __name__ == "__main__":
