@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.dockerignore` to keep `.git`, caches, venvs, and local output out of the Docker build context.
 - `FileReviewCache.cleanup_expired()` to prune expired/corrupt cache files; invoked once per review run to bound `.codereview-agent/cache/` growth.
 
+- Evidence-anchored findings: every issue now carries `category`, `confidence`, `evidence` anchors, an optional `suggested_patch` and its `source` (`rule`/`tool`/`llm`).
+- Admission filter (`core/diff_filter.py`): skips binaries, generated files and lock files, enforces per-file/total token budgets and reports skipped files on `ReviewResult.skipped`.
+- External tool runner (`core/tool_runner.py`): normalises ruff / eslint / semgrep / trufflehog output into findings; missing tools and failures never abort a review.
+- Inline PR review output (`output/inline.py`): top findings become line comments (capped at 25, ordered by severity then confidence), the rest fold into the summary; `findings.json` payload is returned alongside.
+- `S0` evaluation benchmark (`tests/benchmark/`): 24 injected defect cases plus 6 negative cases, a generator pinned to `HEAD` and a runner producing side-by-side reports.
 ### Changed
 - `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 
@@ -29,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Stray `test.txt` committed by accident.
 
+- `core/languages/` (seven hand-written regex rule packs) and `core/complexity_scorer.py`, neither used by the review pipeline; external linters now own deterministic discovery.
 ## [1.2.0] - 2026-06-18
 
 ### Added

@@ -431,6 +431,9 @@ def _build_case(recipe: dict) -> dict:
     )
     if not diff:
         raise ValueError(f"{recipe['id']}: mutation produced no diff")
+    # ``git apply`` accepts the bare ---/+++ form, but the review pipeline parses
+    # ``git diff`` output and keys files off this header, so emit it too.
+    diff = f"diff --git a/{recipe['file']} b/{recipe['file']}\n" + diff
     case = {
         "id": recipe["id"],
         "kind": recipe.get("kind", "positive"),

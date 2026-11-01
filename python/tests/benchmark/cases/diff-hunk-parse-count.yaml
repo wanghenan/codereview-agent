@@ -14,7 +14,8 @@ expect:
 tags:
 - parsing
 - stats
-diff: "--- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+diff: "diff --git a/python/src/codereview/cli/diff_parser.py b/python/src/codereview/cli/diff_parser.py\n\
+  --- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
   @@ -107,7 +107,7 @@\n             # Extract stats from hunk header\n           \
   \  match = re.search(r\"@@\\+.*(\\d+)(?:,(\\d+))? -(\\d+)(?:,(\\d+))? @@\", line)\n\
   \             if match:\n-                new_count = int(match.group(2) or 1)\n\

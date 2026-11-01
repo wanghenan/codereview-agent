@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/agents/reviewer.py
 expect:
   file: python/src/codereview/agents/reviewer.py
-  line: 327
+  line: 346
   line_tolerance: 5
   category: bug
   severity: medium
@@ -13,8 +13,9 @@ expect:
   why: max_retries 参数失效后，一次限流或超时就返回 None，评审结果静默缺文件。
 tags:
 - reliability
-diff: "--- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
-  @@ -324,7 +324,7 @@\n         \"\"\"\n         last_error = None\n \n-        for\
+diff: "diff --git a/python/src/codereview/agents/reviewer.py b/python/src/codereview/agents/reviewer.py\n\
+  --- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
+  @@ -343,7 +343,7 @@\n         \"\"\"\n         last_error = None\n \n-        for\
   \ attempt in range(max_retries):\n+        for attempt in range(1):\n          \
   \   try:\n                 result = await self._review_file(entry)\n           \
   \      if attempt > 0:\n"

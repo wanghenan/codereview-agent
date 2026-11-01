@@ -13,7 +13,8 @@ expect:
   why: 切片写成 [1:1] 后 fallback_configs 恒为空，配置的主备模型形同虚设。
 tags:
 - fallback
-diff: "--- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
+  --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
   @@ -163,7 +163,7 @@\n                     # First attempt - wrap with fallback chain\n\
   \                     return _FallbackChainLLM(\n                         primary_llm=llm,\n\
   -                        fallback_configs=all_configs[1:max_attempts],\n+      \

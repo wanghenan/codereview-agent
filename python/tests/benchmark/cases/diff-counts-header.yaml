@@ -14,7 +14,8 @@ expect:
 tags:
 - parsing
 - stats
-diff: "--- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+diff: "diff --git a/python/src/codereview/cli/diff_parser.py b/python/src/codereview/cli/diff_parser.py\n\
+  --- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
   @@ -113,7 +113,7 @@\n                 deletions += old_count\n             patch_lines.append(line)\n\
   \ \n-        elif line.startswith(\"+\") and not line.startswith(\"+++\"):\n+  \
   \      elif line.startswith(\"+\"):\n             additions += 1\n             patch_lines.append(line)\n\

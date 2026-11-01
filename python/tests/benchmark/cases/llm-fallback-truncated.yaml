@@ -13,7 +13,8 @@ expect:
   why: 构造函数把上限写成 0，任何传入的 fallback 都被丢弃。
 tags:
 - fallback
-diff: "--- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
+  --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
   @@ -194,7 +194,7 @@\n             fallback_configs: List of fallback ConfigLLM configs\
   \ (max 2)\n         \"\"\"\n         self._primary_llm = primary_llm\n-        self._fallback_configs\
   \ = fallback_configs[:2]  # Max 2 fallbacks\n+        self._fallback_configs = fallback_configs[:0]\

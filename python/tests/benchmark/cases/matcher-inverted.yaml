@@ -13,7 +13,8 @@ expect:
   why: 取反后 exclude_patterns 的语义完全反转：测试文件会被评审，源码反而被跳过。
 tags:
 - logic
-diff: "--- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
   @@ -67,4 +67,4 @@\n         \"\"\"\n         if self._spec is None:\n          \
   \   return False\n-        return bool(self._spec.match_file(path))\n+        return\
   \ not self._spec.match_file(path)\n"

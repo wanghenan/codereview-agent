@@ -14,7 +14,8 @@ expect:
 tags:
 - subprocess
 - reliability
-diff: "--- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
+diff: "diff --git a/python/src/codereview/core/github_client.py b/python/src/codereview/core/github_client.py\n\
+  --- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
   @@ -182,7 +182,6 @@\n             text=True,\n             input=input_data,\n \
   \            env=env,\n-            timeout=30,\n         )\n \n     async def get_pull_request(self,\
   \ pr_number: int) -> PullRequest:\n"

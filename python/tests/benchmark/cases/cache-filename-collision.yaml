@@ -14,7 +14,8 @@ expect:
 tags:
 - cross-platform
 - cache
-diff: "--- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+diff: "diff --git a/python/src/codereview/core/cache.py b/python/src/codereview/core/cache.py\n\
+  --- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
   @@ -120,7 +120,7 @@\n             Path to cache file\n         \"\"\"\n        \
   \ # Use safe filename\n-        safe_filename = filename.replace(\"/\", \"_\").replace(\"\
   \\\\\", \"_\")\n+        safe_filename = filename.replace(\"/\", \"_\")\n      \

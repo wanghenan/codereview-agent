@@ -13,7 +13,8 @@ expect:
   why: 原逻辑在旧版 pathspec 上回退到 gitwildmatch；改成 raise 后，较新的 pathspec 版本会让整个评审在初始化阶段崩溃。
 tags:
 - compat
-diff: "--- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
   @@ -54,7 +54,7 @@\n                 self._spec = pathspec.PathSpec.from_lines(factory,\
   \ patterns)\n                 break\n             except (ValueError, TypeError):\n\
   -                continue\n+                raise\n \n     def matches(self, path:\

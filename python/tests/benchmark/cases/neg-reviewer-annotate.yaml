@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/agents/reviewer.py
 expect:
   file: python/src/codereview/agents/reviewer.py
-  line: 238
+  line: 257
   line_tolerance: 5
   category: style
   severity: low
@@ -13,8 +13,9 @@ expect:
   why: 仅为静态类型服务，运行时等价。
 tags:
 - typing
-diff: "--- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
-  @@ -235,7 +235,7 @@\n         Returns:\n             List of file review results\n\
+diff: "diff --git a/python/src/codereview/agents/reviewer.py b/python/src/codereview/agents/reviewer.py\n\
+  --- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
+  @@ -254,7 +254,7 @@\n         Returns:\n             List of file review results\n\
   \         \"\"\"\n-        results = []\n+        results: list[FileReview] = []\n\
   \         semaphore = asyncio.Semaphore(self.max_concurrency)\n         max_retries\
   \ = 3\n \n"

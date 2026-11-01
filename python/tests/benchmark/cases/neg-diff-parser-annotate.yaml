@@ -13,7 +13,8 @@ expect:
   why: 类型标注只影响静态检查，运行时行为不变。
 tags:
 - typing
-diff: "--- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+diff: "diff --git a/python/src/codereview/cli/diff_parser.py b/python/src/codereview/cli/diff_parser.py\n\
+  --- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
   @@ -61,7 +61,7 @@\n     \"\"\"\n     import re\n \n-    entries = []\n+    entries:\
   \ list[DiffEntry] = []\n     current_file = None\n     current_status = \"modified\"\
   \n     additions = 0\n"

@@ -14,7 +14,8 @@ expect:
 tags:
 - error-handling
 - cache
-diff: "--- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+diff: "diff --git a/python/src/codereview/core/cache.py b/python/src/codereview/core/cache.py\n\
+  --- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
   @@ -327,7 +327,7 @@\n                 return None\n \n             return ProjectContext(**data)\n\
   -        except (json.JSONDecodeError, KeyError, ValueError):\n+        except Exception:\n\
   \             # Invalid cache, treat as no cache\n             return None\n \n"

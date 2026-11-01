@@ -13,7 +13,8 @@ expect:
   why: 回退发生时用户看不到主 provider 已失败，排查模型问题时缺少关键线索。
 tags:
 - observability
-diff: "--- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
+  --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
   @@ -170,7 +170,7 @@\n                     return llm\n             except Exception\
   \ as e:\n                 last_error = e\n-                logger.warning(f\"Provider\
   \ {provider_name} failed: {e}\")\n+                logger.debug(f\"Provider {provider_name}\

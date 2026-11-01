@@ -84,7 +84,9 @@ async def run_case(case: dict[str, Any], config_path: Path) -> dict[str, Any]:
         diff_input=json.dumps(_entries(case)),
         output_only=True,
         disable_cache=True,
-        force_refresh=True,
+        # Reuse the analysed project context across cases; re-analysing per case
+        # would spend one LLM call per benchmark item for no extra signal.
+        force_refresh=False,
     )
     elapsed = time.monotonic() - started
     return {"result": payload["result"], "elapsed": elapsed}
@@ -246,7 +248,11 @@ def main(argv: list[str] | None = None) -> int:
 
     out = args.out or BENCH_DIR / "reports" / f"run-{time.strftime('%Y%m%d-%H%M')}.md"
     render(results, out)
-    print(f"report: {out.relative_to(REPO_ROOT)}")
+    try:
+        shown = out.resolve().relative_to(REPO_ROOT)
+    except ValueError:
+        shown = out
+    print(f"report: {shown}")
     return 0
 
 

@@ -13,7 +13,8 @@ expect:
   why: 注释不参与执行，不改变任何行为。
 tags:
 - docs
-diff: "--- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
+diff: "diff --git a/python/src/codereview/core/github_client.py b/python/src/codereview/core/github_client.py\n\
+  --- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
   @@ -176,6 +176,7 @@\n             env[\"GH_TOKEN\"] = self.github_token\n      \
   \       env[\"GITHUB_TOKEN\"] = self.github_token\n \n+        # All gh invocations\
   \ share the same environment and token handling.\n         return subprocess.run(\n\
