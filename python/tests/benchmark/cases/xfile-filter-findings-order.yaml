@@ -1,0 +1,25 @@
+id: xfile-filter-findings-order
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/finding_filter.py
+expect:
+  file: python/src/codereview/core/finding_filter.py
+  line: 87
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: filter_findings 参数顺序被调换，位置参数调用方会把 issues 当 rules
+  why: 改后函数体内引用仍合法（类型注解不检查），只有调用方 reviewer.py 按位置传参时才会错位。
+tags:
+- cross-file
+- signature
+diff: "diff --git a/python/src/codereview/core/finding_filter.py b/python/src/codereview/core/finding_filter.py\n\
+  --- a/python/src/codereview/core/finding_filter.py\n+++ b/python/src/codereview/core/finding_filter.py\n\
+  @@ -85,7 +85,7 @@\n \n \n def filter_findings(\n-    issues: Iterable[FileIssue],\
+  \ rules: FilterRules\n+    rules: FilterRules, issues: Iterable[FileIssue]\n ) ->\
+  \ tuple[list[FileIssue], list[FilteredFinding]]:\n     \"\"\"Split findings into\
+  \ kept and filtered sets.\n \n"
+cross_file:
+  caller: python/src/codereview/agents/reviewer.py:1213
+  note: reviewer.py 中 filter_findings(review.issues, rules) 仍按旧顺序调用

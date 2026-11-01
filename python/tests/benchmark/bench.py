@@ -216,11 +216,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--out", type=Path, help="report path (markdown)")
     parser.add_argument("--kind", choices=["positive", "negative"], help="filter by kind")
+    parser.add_argument("--tag", help="only run cases carrying this tag")
     args = parser.parse_args(argv)
 
     cases = load_cases(args.case)
     if args.kind:
         cases = [c for c in cases if c["kind"] == args.kind]
+    if args.tag:
+        cases = [c for c in cases if args.tag in (c.get("tags") or [])]
 
     problems = 0
     for case in cases:

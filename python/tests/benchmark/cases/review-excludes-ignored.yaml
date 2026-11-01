@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/agents/reviewer.py
 expect:
   file: python/src/codereview/agents/reviewer.py
-  line: 272
+  line: 337
   line_tolerance: 5
   category: bug
   severity: high
@@ -16,7 +16,7 @@ tags:
 - noise
 diff: "diff --git a/python/src/codereview/agents/reviewer.py b/python/src/codereview/agents/reviewer.py\n\
   --- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
-  @@ -269,7 +269,7 @@\n \n         for entry in diff_entries:\n             # Skip\
+  @@ -334,7 +334,7 @@\n \n         for entry in diff_entries:\n             # Skip\
   \ excluded patterns\n-            if self._should_exclude(entry.filename):\n+  \
   \          if False:\n                 continue\n \n             # Check cache if\
   \ available\n"

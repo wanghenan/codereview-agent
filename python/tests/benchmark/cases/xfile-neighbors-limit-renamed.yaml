@@ -1,0 +1,26 @@
+id: xfile-neighbors-limit-renamed
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/symbol_index.py
+expect:
+  file: python/src/codereview/core/symbol_index.py
+  line: 335
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: neighbors 的 limit 参数被改名，调用方仍传 limit=
+  why: 参数改名只影响关键字调用；reviewer.py 的 neighbors(..., limit=context_config.max_neighbors)
+    会 TypeError。
+tags:
+- cross-file
+- rename
+diff: "diff --git a/python/src/codereview/core/symbol_index.py b/python/src/codereview/core/symbol_index.py\n\
+  --- a/python/src/codereview/core/symbol_index.py\n+++ b/python/src/codereview/core/symbol_index.py\n\
+  @@ -332,7 +332,7 @@\n         path: PathLike,\n         start_line: int,\n     \
+  \    end_line: int,\n-        limit: int = 8,\n+        max_items: int = 8,\n  \
+  \   ) -> list[Neighbor]:\n         \"\"\"Return one-hop context around a changed\
+  \ range in ``path``.\n \n"
+cross_file:
+  caller: python/src/codereview/agents/reviewer.py:563
+  note: reviewer.py 仍然使用 limit=context_config.max_neighbors

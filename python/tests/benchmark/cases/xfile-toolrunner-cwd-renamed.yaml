@@ -1,0 +1,27 @@
+id: xfile-toolrunner-cwd-renamed
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/tool_runner.py
+expect:
+  file: python/src/codereview/core/tool_runner.py
+  line: 393
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: ToolRunner.run 的 cwd 关键字参数被改名，调用方仍传 cwd=
+  why: 关键字参数改名在定义侧无痕迹；reviewer.py 里 active_runner.run(paths, cwd=self.project_root)
+    会 TypeError。
+tags:
+- cross-file
+- rename
+diff: "diff --git a/python/src/codereview/core/tool_runner.py b/python/src/codereview/core/tool_runner.py\n\
+  --- a/python/src/codereview/core/tool_runner.py\n+++ b/python/src/codereview/core/tool_runner.py\n\
+  @@ -390,7 +390,7 @@\n             selected.append(spec)\n         return selected\n\
+  \ \n-    def run(self, paths: Iterable[PathLike], cwd: PathLike) -> list[Finding]:\n\
+  +    def run(self, paths: Iterable[PathLike], workdir: PathLike) -> list[Finding]:\n\
+  \         \"\"\"Run every applicable available tool and return normalised findings.\n\
+  \ \n         Missing tools are skipped without raising but recorded as a\n"
+cross_file:
+  caller: python/src/codereview/agents/reviewer.py:638
+  note: reviewer.py 仍然使用 cwd=self.project_root

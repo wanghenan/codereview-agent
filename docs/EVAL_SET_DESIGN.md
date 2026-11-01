@@ -225,3 +225,24 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 它也不是免费的：每个文件最多 2400 字符（≈600 tokens）。按 3 条邻居 / 2400 字符的默认值，评审输入成本上升约 20–30%。
 
 **因此这条能力需要专门的用例才能验证**，下一步应补 6 条"跨文件缺陷"样本，形态是：改 A 的函数签名/返回值语义，而破坏发生在 B 的调用点——只读 diff 看不出，只有读到 caller 才能判断。在此之前，默认值保持开启（真实 PR 的跨文件改动比这套注入样本复杂），但不应宣称它已被基准证明有效。
+
+### 跨文件用例（6 条）与特异性指标
+
+行号命中这个指标测不出上下文的价值：任何签名改动，模型都会"猜"调用方可能坏掉，于是照样命中。为此补了 6 条**跨文件用例**（tag `cross-file`）：改动在 A 文件内自洽，破坏发生在 B 的调用点——改必填参数、调换参数顺序、改方法名、改关键字参数、改返回形态。
+
+跑 `bench.py --tag cross-file` 两次（`context.neighbors` 开/关），再用 `tests/benchmark/cross_file_score.py` 统计"finding 是否点名了真实调用方的文件"：
+
+| 指标 | 上下文关 | 上下文开 |
+|---|---|---|
+| 行号命中（原有指标） | 6 / 6 | 6 / 6 |
+| **点名调用方文件** | **0 / 6** | **3 / 6** |
+| 平均最高置信度 | 0.80 | **0.91** |
+
+同一条 `xfile-inline-build-renamed` 的两种输出：
+
+- 关：`The method build ... was renamed ... Any caller, base class contract, or interface that invokes .build(...)`——**泛泛猜测**，conf 0.70
+- 开：`The cross-file context shows cli/review_cmd.py:215 still calls inline_builder.build(result)`——**具体证据**，conf 0.95
+
+**结论：上下文的价值体现在"证据具体化"，不在命中率。** 决策：`context.neighbors` 保持默认开启；行号命中作为回归指标继续用，但跨文件能力必须看特异性指标，否则会误判为"没用"。
+
+**仍未解决**：6 条里只有 3 条点名调用方（`filter-findings-order`、`create-review-body`、`toolrunner-cwd` 仍是笼统表述）。下一步可查这三条是否因为邻域截断（3 条 / 2400 字符）把调用方挤掉了。

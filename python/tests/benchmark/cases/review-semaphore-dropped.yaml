@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/agents/reviewer.py
 expect:
   file: python/src/codereview/agents/reviewer.py
-  line: 262
+  line: 327
   line_tolerance: 5
   category: bug
   severity: medium
@@ -15,7 +15,7 @@ tags:
 - concurrency
 diff: "diff --git a/python/src/codereview/agents/reviewer.py b/python/src/codereview/agents/reviewer.py\n\
   --- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
-  @@ -259,9 +259,8 @@\n         max_retries = 3\n \n         async def review_with_semaphore(entry:\
+  @@ -324,9 +324,8 @@\n         max_retries = 3\n \n         async def review_with_semaphore(entry:\
   \ DiffEntry) -> tuple[DiffEntry, Optional[FileReview]]:\n-            async with\
   \ semaphore:\n-                result = await self._review_file_with_retry(entry,\
   \ max_retries=max_retries)\n-                return (entry, result)\n+         \

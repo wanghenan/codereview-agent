@@ -385,6 +385,96 @@ RECIPES: list[dict] = [
         "tags": ["refactor"],
     },
     {
+        "id": "xfile-filter-entries-arity",
+        "file": "python/src/codereview/core/diff_filter.py",
+        "find": "def filter_entries(\n    entries: list[DiffEntry], config: FilterConfig\n) -> tuple[list[DiffEntry], list[SkipRecord]]:",
+        "replace": "def filter_entries(\n    entries: list[DiffEntry], config: FilterConfig, strict: bool\n) -> tuple[list[DiffEntry], list[SkipRecord]]:",
+        "category": "bug",
+        "severity": "high",
+        "summary": "filter_entries 新增必填参数，两处调用点会直接 TypeError",
+        "why": "只改签名本身看起来像内部重构；破坏发生在调用方 reviewer.py，它仍按两个位置参数调用。",
+        "cross_file": {
+            "caller": "python/src/codereview/agents/reviewer.py:1055",
+            "note": "reviewer.py 中 filter_entries(diff_entries, filter_config) 少一个参数",
+        },
+        "tags": ["cross-file", "signature"],
+    },
+    {
+        "id": "xfile-filter-findings-order",
+        "file": "python/src/codereview/core/finding_filter.py",
+        "find": "def filter_findings(\n    issues: Iterable[FileIssue], rules: FilterRules\n) -> tuple[list[FileIssue], list[FilteredFinding]]:",
+        "replace": "def filter_findings(\n    rules: FilterRules, issues: Iterable[FileIssue]\n) -> tuple[list[FileIssue], list[FilteredFinding]]:",
+        "category": "bug",
+        "severity": "high",
+        "summary": "filter_findings 参数顺序被调换，位置参数调用方会把 issues 当 rules",
+        "why": "改后函数体内引用仍合法（类型注解不检查），只有调用方 reviewer.py 按位置传参时才会错位。",
+        "cross_file": {
+            "caller": "python/src/codereview/agents/reviewer.py:1213",
+            "note": "reviewer.py 中 filter_findings(review.issues, rules) 仍按旧顺序调用",
+        },
+        "tags": ["cross-file", "signature"],
+    },
+    {
+        "id": "xfile-inline-build-renamed",
+        "file": "python/src/codereview/output/inline.py",
+        "find": "    def build(self, review_result: ReviewResult) -> dict[str, Any]:",
+        "replace": "    def render(self, review_result: ReviewResult) -> dict[str, Any]:",
+        "category": "bug",
+        "severity": "high",
+        "summary": "InlineCommentBuilder.build 被改名，调用方仍调用 .build()",
+        "why": "文件内没有对 build 的调用，改名在本地看起来是安全的；cli/review_cmd.py 的 inline_builder.build(result) 会 AttributeError。",
+        "cross_file": {
+            "caller": "python/src/codereview/cli/review_cmd.py:214",
+            "note": "review_cmd.py 仍然调用 inline_builder.build(result)",
+        },
+        "tags": ["cross-file", "rename"],
+    },
+    {
+        "id": "xfile-toolrunner-cwd-renamed",
+        "file": "python/src/codereview/core/tool_runner.py",
+        "find": "    def run(self, paths: Iterable[PathLike], cwd: PathLike) -> list[Finding]:",
+        "replace": "    def run(self, paths: Iterable[PathLike], workdir: PathLike) -> list[Finding]:",
+        "category": "bug",
+        "severity": "high",
+        "summary": "ToolRunner.run 的 cwd 关键字参数被改名，调用方仍传 cwd=",
+        "why": "关键字参数改名在定义侧无痕迹；reviewer.py 里 active_runner.run(paths, cwd=self.project_root) 会 TypeError。",
+        "cross_file": {
+            "caller": "python/src/codereview/agents/reviewer.py:638",
+            "note": "reviewer.py 仍然使用 cwd=self.project_root",
+        },
+        "tags": ["cross-file", "rename"],
+    },
+    {
+        "id": "xfile-neighbors-limit-renamed",
+        "file": "python/src/codereview/core/symbol_index.py",
+        "find": "        limit: int = 8,\n    ) -> list[Neighbor]:",
+        "replace": "        max_items: int = 8,\n    ) -> list[Neighbor]:",
+        "category": "bug",
+        "severity": "medium",
+        "summary": "neighbors 的 limit 参数被改名，调用方仍传 limit=",
+        "why": "参数改名只影响关键字调用；reviewer.py 的 neighbors(..., limit=context_config.max_neighbors) 会 TypeError。",
+        "cross_file": {
+            "caller": "python/src/codereview/agents/reviewer.py:563",
+            "note": "reviewer.py 仍然使用 limit=context_config.max_neighbors",
+        },
+        "tags": ["cross-file", "rename"],
+    },
+    {
+        "id": "xfile-create-review-body-renamed",
+        "file": "python/src/codereview/core/github_client.py",
+        "find": "        pr_number: int,\n        comments: list[dict[str, Any]],\n        body: Optional[str] = None,",
+        "replace": "        pr_number: int,\n        comments: list[dict[str, Any]],\n        summary: Optional[str] = None,",
+        "category": "bug",
+        "severity": "medium",
+        "summary": "create_review 的 body 参数被改名，调用方仍传 body=",
+        "why": "签名改名在 github_client.py 内部自洽（函数体若同步改），但 review_cmd.py 用 body=inline_payload['summary'] 调用会 TypeError。",
+        "cross_file": {
+            "caller": "python/src/codereview/cli/review_cmd.py:224",
+            "note": "review_cmd.py 仍然使用 body=inline_payload['summary']",
+        },
+        "tags": ["cross-file", "rename"],
+    },
+    {
         "id": "llm-provider-failure-hidden",
         "file": "python/src/codereview/core/llm.py",
         "find": '                logger.warning(f"Provider {provider_name} failed: {e}")',
@@ -454,6 +544,8 @@ def _build_case(recipe: dict) -> dict:
     }
     if case["kind"] == "negative":
         case["invalid_reason"] = recipe["invalid_reason"]
+    if recipe.get("cross_file"):
+        case["cross_file"] = recipe["cross_file"]
     return case
 
 
