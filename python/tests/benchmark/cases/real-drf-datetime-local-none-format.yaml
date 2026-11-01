@@ -1,0 +1,50 @@
+id: real-drf-datetime-local-none-format
+kind: positive
+origin: real-pr
+language: python
+repo: encode/django-rest-framework
+base_commit: ade172e1d5db87dc86bc616cbb4df7ccd2eb2fd3
+pr: 9365
+pr_title: Fix `HTMLFormRenderer` to ensure a valid `datetime-local` format
+strictness: defect
+review_comment:
+  author: ionelmc
+  url: https://github.com/encode/django-rest-framework/pull/9365#discussion_r2981639310
+  body: This seems to allow another type of failure if the format is None.
+expect:
+  file: rest_framework/renderers.py
+  line: 352
+  line_tolerance: 3
+  category: bug
+  severity: medium
+  summary: DATETIME_FORMAT 为 None 时跳过解析分支，但后面仍对字符串调 .replace(tzinfo=)
+  why: format_ is None 表示按原样输出字符串，此时 field.value 是 str；外层那句 field.value.replace(tzinfo=None).isoformat(...)
+    会对 str 抛 AttributeError，HTML 表单渲染直接失败。解析与格式化要一起放进 format_ is not None 分支。
+tags:
+- real-pr
+- edge-case
+- rendering
+diff: "diff --git a/rest_framework/renderers.py b/rest_framework/renderers.py\nindex b81f9ab46c..6d7218bbcf\
+  \ 100644\n--- a/rest_framework/renderers.py\n+++ b/rest_framework/renderers.py\n@@ -22,7 +23,7 @@\n\
+  \ from django.utils.http import parse_header_parameters\n from django.utils.safestring import SafeString\n\
+  \ \n-from rest_framework import VERSION, exceptions, serializers, status\n+from rest_framework import\
+  \ ISO_8601, VERSION, exceptions, serializers, status\n from rest_framework.compat import (\n     INDENT_SEPARATORS,\
+  \ LONG_SEPARATORS, SHORT_SEPARATORS, coreapi, coreschema,\n     pygments_css, yaml\n@@ -339,11 +340,32\
+  \ @@ def render_field(self, field, parent_style):\n             style['template_pack'] = parent_style.get('template_pack',\
+  \ self.template_pack)\n         style['renderer'] = self\n \n-        # Get a clone of the field with\
+  \ text-only value representation.\n+        # Get a clone of the field with text-only value representation\
+  \ ('' if None or False).\n         field = field.as_form_field()\n \n-        if style.get('input_type')\
+  \ == 'datetime-local' and isinstance(field.value, str):\n-            field.value = field.value.rstrip('Z')\n\
+  +        if style.get('input_type') == 'datetime-local':\n+            try:\n+                format_\
+  \ = field._field.format\n+            except AttributeError:\n+                format_ = api_settings.DATETIME_FORMAT\n\
+  +\n+            if format_ is not None:\n+                # field.value is expected to be a string\n\
+  +                # https://www.django-rest-framework.org/api-guide/fields/#datetimefield\n+        \
+  \        field_value = field.value\n+                if format_ == ISO_8601 and sys.version_info < (3,\
+  \ 11):\n+                    # We can drop this branch once we drop support for Python < 3.11\n+   \
+  \                 # https://docs.python.org/3/whatsnew/3.11.html#datetime\n+                    field_value\
+  \ = field_value.rstrip('Z')\n+                field.value = (\n+                    datetime.datetime.fromisoformat(field_value)\
+  \ if format_ == ISO_8601\n+                    else datetime.datetime.strptime(field_value, format_)\n\
+  +                )\n+\n+            # The format of an input type=\"datetime-local\" is \"yyyy-MM-ddThh:mm\"\
+  \n+            # followed by optional \":ss\" or \":ss.SSS\", so keep only the first three\n+      \
+  \      # digits of milliseconds to avoid browser console error.\n+            field.value = field.value.replace(tzinfo=None).isoformat(timespec=\"\
+  milliseconds\")\n \n         if 'template' in style:\n             template_name = style['template']\n"

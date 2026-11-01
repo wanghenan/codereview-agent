@@ -1,0 +1,56 @@
+id: real-requests-timedcache-keyerror
+kind: positive
+origin: real-pr
+language: python
+repo: psf/requests
+base_commit: d6f4818c0b40bc6c00433c013b7daaea83b2cd51
+pr: 3885
+pr_title: Cache proxy bypass
+strictness: nit
+review_comment:
+  author: sigmavirus24
+  url: https://github.com/psf/requests/pull/3885#discussion_r104289476
+  body: This should raise a `KeyError` with the key as an argument, e.g., `KeyError(key)`.
+expect:
+  file: requests/structures.py
+  line: 169
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: TimedCache.__getitem__ 过期后抛裸 KeyError，丢失键名
+  why: MutableMapping 约定抛 KeyError(key)；裸 KeyError 让上层 except KeyError as e 拿不到键，过期与缺键也无法区分。
+tags:
+- real-pr
+- api-contract
+diff: "diff --git a/requests/structures.py b/requests/structures.py\nindex 05d2b3f57b..beb268e361 100644\n\
+  --- a/requests/structures.py\n+++ b/requests/structures.py\n@@ -8,9 +8,12 @@\n \"\"\"\n \n import collections\n\
+  +import time\n \n from .compat import OrderedDict\n \n+current_time = getattr(time, 'monotonic', time.time)\n\
+  +\n \n class CaseInsensitiveDict(collections.MutableMapping):\n     \"\"\"A case-insensitive ``dict``-like\
+  \ object.\n@@ -103,3 +106,89 @@ def __getitem__(self, key):\n \n     def get(self, key, default=None):\n\
+  \         return self.__dict__.get(key, default)\n+\n+\n+class TimedCacheManaged(object):\n+    \"\"\
+  \"\n+    Wrap a function call in a timed cache\n+    \"\"\"\n+    def __init__(self, fnc):\n+      \
+  \  self.fnc = fnc\n+        self.cache = TimedCache()\n+\n+    def __call__(self, *args, **kwargs):\n\
+  +        key = args[0]\n+        found = None\n+        try:\n+            found = self.cache[key]\n\
+  +        except KeyError:\n+            found = self.fnc(key, **kwargs)\n+            self.cache[key]\
+  \ = found\n+\n+        return found\n+\n+\n+class TimedCache(collections.MutableMapping):\n+    \"\"\
+  \"\n+    Evicts entries after expiration_secs. If none are expired and maxlen is hit,\n+    will evict\
+  \ the oldest cached entry\n+    \"\"\"\n+    def __init__(self, maxlen=32, expiration_secs=60):\n+ \
+  \       \"\"\"\n+        :param maxlen: most number of entries to hold on to\n+        :param expiration_secs:\
+  \ the number of seconds to hold on\n+        to entries\n+        \"\"\"\n+        self.maxlen = maxlen\n\
+  +        self.expiration_secs = expiration_secs\n+        self._dict = OrderedDict()\n+\n+    def __repr__(self):\n\
+  +        return '<TimedCache maxlen:%d len:%d expiration_secs:%d>' % \\\n+            (self.maxlen,\
+  \ len(self._dict), self.expiration_secs)\n+\n+    def __iter__(self):\n+        return map(lambda kv:\
+  \ (kv[0], kv[1][1]), self._dict.items()).__iter__()\n+\n+    def __delitem__(self, item):\n+       \
+  \ return self._dict.__delitem__(item)\n+\n+    def __getitem__(self, key):\n+        \"\"\"\n+     \
+  \   Look up an item in the cache. If the item\n+        has already expired, it will be invalidated\
+  \ and not returned\n+\n+        :param key: which entry to look up\n+        :return: the value in the\
+  \ cache, or None\n+        \"\"\"\n+        occurred, value = self._dict[key]\n+        now = int(current_time())\n\
+  +\n+        if now - occurred > self.expiration_secs:\n+            del self._dict[key]\n+         \
+  \   raise KeyError\n+        else:\n+            return value\n+\n+    def __setitem__(self, key, value):\n\
+  +        \"\"\"\n+        Locates the value at lookup key, if cache is full, will evict the\n+     \
+  \   oldest entry\n+\n+        :param key: the key to search the cache for\n+        :param value: the\
+  \ value to be added to the cache\n+        \"\"\"\n+        now = int(current_time())\n+\n+        while\
+  \ len(self._dict) >= self.maxlen:\n+            self._dict.popitem(last=False)\n+\n+        return self._dict.__setitem__(key,\
+  \ (now, value))\n+\n+    def __len__(self):\n+        \"\"\":return: the length of the cache\"\"\"\n\
+  +        return len(self._dict)\n+\n+    def clear(self):\n+        \"\"\"Clears the cache\"\"\"\n+\
+  \        return self._dict.clear()\n"

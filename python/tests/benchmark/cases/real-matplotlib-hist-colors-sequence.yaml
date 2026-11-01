@@ -1,0 +1,54 @@
+id: real-matplotlib-hist-colors-sequence
+kind: positive
+origin: real-pr
+language: python
+repo: matplotlib/matplotlib
+base_commit: f5067c16757f4cd800ae3ba0ac25ff79d2e41a7f
+pr: 28073
+pr_title: Add support for multiple hatches, edgecolors and linewidths in histograms
+strictness: defect
+review_comment:
+  author: story645
+  url: https://github.com/matplotlib/matplotlib/pull/28073#discussion_r1631497567
+  body: I'm not seeing code that sets color=colors and you don't test the colors=set, facecolor=None,
+    edgecolor=None case, so can you verify that case works as expected?
+expect:
+  file: lib/matplotlib/axes/_axes.py
+  line: 7222
+  line_tolerance: 3
+  category: bug
+  severity: medium
+  summary: hist() 的 colors 为 set 时，np.atleast_1d 把整个 set 当成一个颜色对象
+  why: np.atleast_1d({'red','blue'}) 得到长度 1 的 object 数组，cycle 之后每个 patch 的颜色都是这个 set，既无法按 dataset 分配，渲染时也不是合法颜色。kwargs
+    的 edgecolor/facecolor 同理。
+tags:
+- real-pr
+- input-validation
+- plotting
+diff: "diff --git a/lib/matplotlib/axes/_axes.py b/lib/matplotlib/axes/_axes.py\nindex 52c99b125d36..07393b1028d2\
+  \ 100644\n--- a/lib/matplotlib/axes/_axes.py\n+++ b/lib/matplotlib/axes/_axes.py\n@@ -6937,7 +6937,13\
+  \ @@ def hist(self, x, bins=None, range=None, density=False, weights=None,\n             DATA_PARAMETER_PLACEHOLDER\n\
+  \ \n         **kwargs\n-            `~matplotlib.patches.Patch` properties\n+            `~matplotlib.patches.Patch`\
+  \ properties. The following properties\n+            additionally accept a sequence of values corresponding\
+  \ to the\n+            datasets in *x*:\n+            *edgecolors*, *facecolors*, *lines*, *linestyles*,\
+  \ *hatches*.\n+\n+            .. versionadded:: 3.10\n+               Allowing sequences of values in\
+  \ above listed Patch properties.\n \n         See Also\n         --------\n@@ -7210,15 +7216,35 @@ def\
+  \ hist(self, x, bins=None, range=None, density=False, weights=None,\n         # If None, make all labels\
+  \ None (via zip_longest below); otherwise,\n         # cast each element to str, but keep a single str\
+  \ as it.\n         labels = [] if label is None else np.atleast_1d(np.asarray(label, str))\n+\n+   \
+  \     if histtype == \"step\":\n+            edgecolors = itertools.cycle(np.atleast_1d(kwargs.get('edgecolor',\n\
+  +                                                                  colors)))\n+        else:\n+    \
+  \        edgecolors = itertools.cycle(np.atleast_1d(kwargs.get(\"edgecolor\", None)))\n+\n+        facecolors\
+  \ = itertools.cycle(np.atleast_1d(kwargs.get('facecolor', colors)))\n+        hatches = itertools.cycle(np.atleast_1d(kwargs.get('hatch',\
+  \ None)))\n+        linewidths = itertools.cycle(np.atleast_1d(kwargs.get('linewidth', None)))\n+  \
+  \      linestyles = itertools.cycle(np.atleast_1d(kwargs.get('linestyle', None)))\n+\n         for patch,\
+  \ lbl in itertools.zip_longest(patches, labels):\n-            if patch:\n-                p = patch[0]\n\
+  +            if not patch:\n+                continue\n+            p = patch[0]\n+            kwargs.update({\n\
+  +                'hatch': next(hatches),\n+                'linewidth': next(linewidths),\n+       \
+  \         'linestyle': next(linestyles),\n+                'edgecolor': next(edgecolors),\n+       \
+  \         'facecolor': next(facecolors),\n+            })\n+            p._internal_update(kwargs)\n\
+  +            if lbl is not None:\n+                p.set_label(lbl)\n+            for p in patch[1:]:\n\
+  \                 p._internal_update(kwargs)\n-                if lbl is not None:\n-              \
+  \      p.set_label(lbl)\n-                for p in patch[1:]:\n-                    p._internal_update(kwargs)\n\
+  -                    p.set_label('_nolegend_')\n+                p.set_label('_nolegend_')\n \n    \
+  \     if nx == 1:\n             return tops[0], bins, patches[0]\n"

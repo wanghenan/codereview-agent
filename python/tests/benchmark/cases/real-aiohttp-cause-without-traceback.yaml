@@ -1,0 +1,42 @@
+id: real-aiohttp-cause-without-traceback
+kind: positive
+origin: real-pr
+language: python
+repo: aio-libs/aiohttp
+base_commit: dfc92967d10eb83a8d726c02c3de90da15f8335f
+pr: 8089
+pr_title: 💅 Propagate error causes via asyncio protocols
+strictness: design
+review_comment:
+  author: Dreamsorcerer
+  url: https://github.com/aio-libs/aiohttp/pull/8089#discussion_r1469507244
+  body: "Maybe I misremember, but I don't think this includes a traceback, as the traceback is only present\
+    \ if we are catching a thrown exception.\r\n\r\nIf so, it'd be really useful to have a way to get\
+    \ the traceback at this point in the code and include it in the exception."
+expect:
+  file: aiohttp/helpers.py
+  line: 830
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: set_exception 直接赋 exc.__cause__，但 cause 未 raise 过，链式异常没有栈
+  why: 赋 __cause__ 只影响展示；exc_cause 若只是构造出来而没被 raise，其 __traceback__ 为 None，日志里只剩 'direct cause' 一行、没有出错位置。要么
+    raise ... from，要么显式搬运 traceback。
+tags:
+- real-pr
+- exception
+- debuggability
+diff: "diff --git a/aiohttp/helpers.py b/aiohttp/helpers.py\nindex 5435e2f9e07..abd4c7fc75d 100644\n---\
+  \ a/aiohttp/helpers.py\n+++ b/aiohttp/helpers.py\n@@ -797,9 +797,39 @@ def set_result(fut: \"asyncio.Future[_T]\"\
+  , result: _T) -> None:\n         fut.set_result(result)\n \n \n-def set_exception(fut: \"asyncio.Future[_T]\"\
+  , exc: BaseException) -> None:\n-    if not fut.done():\n-        fut.set_exception(exc)\n+_EXC_SENTINEL\
+  \ = BaseException()\n+\n+\n+class ErrorableProtocol(Protocol):\n+    def set_exception(\n+        self,\n\
+  +        exc: BaseException,\n+        exc_cause: BaseException = ...,\n+    ) -> None:\n+        ...\
+  \  # pragma: no cover\n+\n+\n+def set_exception(\n+    fut: \"asyncio.Future[_T] | ErrorableProtocol\"\
+  ,\n+    exc: BaseException,\n+    exc_cause: BaseException = _EXC_SENTINEL,\n+) -> None:\n+    \"\"\"\
+  Set future exception.\n+\n+    If the future is marked as complete, this function is a no-op.\n+\n+\
+  \    :param exc_cause: An exception that is a direct cause of ``exc``.\n+                      Only\
+  \ set if provided.\n+    \"\"\"\n+    if asyncio.isfuture(fut) and fut.done():\n+        return\n+\n\
+  +    exc_is_sentinel = exc_cause is _EXC_SENTINEL\n+    exc_causes_itself = exc is exc_cause\n+    if\
+  \ not exc_is_sentinel and not exc_causes_itself:\n+        exc.__cause__ = exc_cause\n+\n+    fut.set_exception(exc)\n\
+  \ \n \n @functools.total_ordering\n"
