@@ -1,0 +1,81 @@
+# Nightly real-corpus benchmark with a candidate-hit threshold gate.
+# See docs/EVAL_SET_DESIGN.md, section 夜间门禁.
+
+name: Benchmark
+
+on:
+  schedule:
+    # Every day at 18:00 UTC.
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Real-corpus benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The benchmark costs real model calls. Forks and repositories without
+      # the secret must stay green, so every later step is gated on this one.
+      - name: Check for DEEPSEEK_API_KEY
+        id: key
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "::notice title=Benchmark skipped::DEEPSEEK_API_KEY is not configured; skipping the nightly benchmark."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.key.outputs.enabled == 'true'
+        run: pip install -e "python[dev]"
+
+      - name: Validate benchmark cases
+        if: steps.key.outputs.enabled == 'true'
+        working-directory: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tests/benchmark/bench.py --validate
+
+      - name: Run benchmark
+        if: steps.key.outputs.enabled == 'true'
+        working-directory: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          python tests/benchmark/bench.py --all \
+            --config tests/benchmark/bench.yaml \
+            --out tests/benchmark/reports/nightly.md \
+            --json-out tests/benchmark/reports/nightly.json
+
+      - name: Gate against baseline
+        if: steps.key.outputs.enabled == 'true'
+        working-directory: python
+        run: python tests/benchmark/gate.py --report tests/benchmark/reports/nightly.json
+
+      - name: Upload benchmark artifacts
+        if: always() && steps.key.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: python/tests/benchmark/reports/
+          if-no-files-found: warn
+          retention-days: 30
