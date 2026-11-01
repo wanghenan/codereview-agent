@@ -1,0 +1,25 @@
+id: xfile-filter-entries-arity
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/diff_filter.py
+expect:
+  file: python/src/codereview/core/diff_filter.py
+  line: 293
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: filter_entries 新增必填参数，两处调用点会直接 TypeError
+  why: 只改签名本身看起来像内部重构；破坏发生在调用方 reviewer.py，它仍按两个位置参数调用。
+tags:
+- cross-file
+- signature
+diff: "diff --git a/python/src/codereview/core/diff_filter.py b/python/src/codereview/core/diff_filter.py\n\
+  --- a/python/src/codereview/core/diff_filter.py\n+++ b/python/src/codereview/core/diff_filter.py\n\
+  @@ -291,7 +291,7 @@\n \n \n def filter_entries(\n-    entries: list[DiffEntry],\
+  \ config: FilterConfig\n+    entries: list[DiffEntry], config: FilterConfig, strict:\
+  \ bool\n ) -> tuple[list[DiffEntry], list[SkipRecord]]:\n     \"\"\"Split diff entries\
+  \ into reviewable and skipped sets.\n \n"
+cross_file:
+  caller: python/src/codereview/agents/reviewer.py:1084
+  note: reviewer.py 中 filter_entries(diff_entries, filter_config) 少一个参数

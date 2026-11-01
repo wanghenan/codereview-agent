@@ -1,0 +1,21 @@
+id: gh-run-missing-timeout
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/github_client.py
+expect:
+  file: python/src/codereview/core/github_client.py
+  line: 183
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: gh 子进程调用去掉超时，网络卡住时评审线程永久挂起
+  why: subprocess.run 无 timeout 时，gh 等待认证或网络重试会让整个评审无限期阻塞，CI 也不会失败。
+tags:
+- subprocess
+- reliability
+diff: "diff --git a/python/src/codereview/core/github_client.py b/python/src/codereview/core/github_client.py\n\
+  --- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
+  @@ -182,7 +182,6 @@\n             text=True,\n             input=input_data,\n \
+  \            env=env,\n-            timeout=30,\n         )\n \n     async def get_pull_request(self,\
+  \ pr_number: int) -> PullRequest:\n"

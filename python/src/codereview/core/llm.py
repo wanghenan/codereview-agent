@@ -12,8 +12,6 @@ from codereview.models import ConfigLLM, LLMProvider
 
 logger = logging.getLogger(__name__)
 
-MAX_BACKOFF_SECONDS = 60
-
 
 class LLMFactory:
     """Factory for creating LLM instances based on provider."""
@@ -307,70 +305,3 @@ class _FallbackChainLLM:
         # All providers failed
         error_summary = "; ".join(str(e) for e in prior_errors)
         raise Exception(f"All LLM providers failed: {error_summary}")
-
-
-def is_rate_limit_error(response: Any) -> bool:
-    """Detect if response indicates a rate limit error.
-
-    Args:
-        response: HTTP response object or error dict
-
-    Returns:
-        True if rate limit detected, False otherwise
-    """
-    if response is None:
-        return False
-
-    if hasattr(response, "status_code"):
-        if response.status_code == 429:
-            logger.warning("Rate limit detected: HTTP 429")
-            return True
-
-    if isinstance(response, dict):
-        error = response.get("error", {})
-        if isinstance(error, dict):
-            code = error.get("code", "")
-            if code in ("rate_limit_exceeded", "rate_limit_error", "rate_limited"):
-                logger.warning(f"Rate limit detected: error code '{code}'")
-                return True
-
-    return False
-
-
-def get_retry_after_delay(response: Any) -> Optional[int]:
-    """Extract Retry-After header value from response.
-
-    Args:
-        response: HTTP response object
-
-    Returns:
-        Retry-After delay in seconds, or None if not present/invalid
-    """
-    if response is None or not hasattr(response, "headers"):
-        return None
-
-    retry_after = response.headers.get("Retry-After")
-    if retry_after is None:
-        return None
-
-    try:
-        delay = int(retry_after)
-        logger.info(f"Retry-After header found: {delay}s")
-        return delay
-    except ValueError:
-        return None
-
-
-def get_backoff_delay(attempt: int) -> int:
-    """Calculate exponential backoff delay.
-
-    Args:
-        attempt: Current retry attempt (0-indexed)
-
-    Returns:
-        Delay in seconds (1, 2, 4, 8, 16, 32, 60 capped)
-    """
-    delay = 2**attempt
-    if delay > MAX_BACKOFF_SECONDS:
-        delay = MAX_BACKOFF_SECONDS
-    return delay

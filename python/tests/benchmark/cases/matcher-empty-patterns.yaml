@@ -1,0 +1,20 @@
+id: matcher-empty-patterns
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/path_matcher.py
+expect:
+  file: python/src/codereview/core/path_matcher.py
+  line: 38
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: 空 patterns 不再提前返回，后续对 None 做 split
+  why: 去掉早退后，patterns 为 None 时下一行 patterns 迭代会抛 TypeError，配置未写 excludePatterns 的项目直接失败。
+tags:
+- null-handling
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+  @@ -36,8 +36,6 @@\n                 produces a matcher that matches nothing.\n \
+  \        \"\"\"\n         self._spec = None\n-        if not patterns:\n-      \
+  \      return\n \n         if not _PATHSPEC_AVAILABLE:\n             logger.warning(\n"

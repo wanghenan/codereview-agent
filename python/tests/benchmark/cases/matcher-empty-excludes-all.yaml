@@ -1,0 +1,20 @@
+id: matcher-empty-excludes-all
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/path_matcher.py
+expect:
+  file: python/src/codereview/core/path_matcher.py
+  line: 68
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: 未配置排除规则时，所有文件都被判为应排除
+  why: pathspec 未安装或 patterns 为空时 _spec 为 None；返回 True 会让每个文件都被排除，评审结果始终为空。
+tags:
+- control-flow
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+  @@ -66,5 +66,5 @@\n             True if the path matches any exclude pattern.\n\
+  \         \"\"\"\n         if self._spec is None:\n-            return False\n+\
+  \            return True\n         return bool(self._spec.match_file(path))\n"

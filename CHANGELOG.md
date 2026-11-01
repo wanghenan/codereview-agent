@@ -8,9 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `LICENSE` (MIT) file and `[project.license]` metadata in `pyproject.toml` (previously declared but missing).
 - Automated release workflow (`.github/workflows/release.yml`): tag-triggered, runs a self-contained quality gate (ruff + pytest), builds wheel/sdist, and publishes a GitHub Release with notes extracted from CHANGELOG.md. Pre-release tags (e.g. `v1.2.0-rc1`) are auto-marked as prerelease.
 - Project URLs (`Homepage`, `Repository`, `Changelog`, `Issues`) in `pyproject.toml` so built artifacts carry complete metadata.
+- Test coverage gating via `pytest-cov` + `[tool.coverage]` (`fail_under = 50`, branch coverage); current baseline ~64%.
+- CI Python version matrix (3.10 / 3.11 / 3.12) so all declared `requires-python` versions are exercised.
+- `.dockerignore` to keep `.git`, caches, venvs, and local output out of the Docker build context.
+- `FileReviewCache.cleanup_expired()` to prune expired/corrupt cache files; invoked once per review run to bound `.codereview-agent/cache/` growth.
 
+- Evidence-anchored findings: every issue now carries `category`, `confidence`, `evidence` anchors, an optional `suggested_patch` and its `source` (`rule`/`tool`/`llm`).
+- Admission filter (`core/diff_filter.py`): skips binaries, generated files and lock files, enforces per-file/total token budgets and reports skipped files on `ReviewResult.skipped`.
+- External tool runner (`core/tool_runner.py`): normalises ruff / eslint / semgrep / trufflehog output into findings; missing tools and failures never abort a review.
+- Inline PR review output (`output/inline.py`): top findings become line comments (capped at 25, ordered by severity then confidence), the rest fold into the summary; `findings.json` payload is returned alongside.
+- `S0` evaluation benchmark (`tests/benchmark/`): 24 injected defect cases plus 6 negative cases, a generator pinned to `HEAD` and a runner producing side-by-side reports.
+- Symbol index (`core/symbol_index.py`, stdlib `ast`, no new dependencies) and bounded cross-file context injection into review prompts (3 neighbours / 2400 chars by default).
+### Changed
+- `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
+
+### Changed
+- CLI entry point switched from `main` to a top-level `cli()` dispatcher backed by argparse subparsers; `codereview fix` and `codereview merge` are now first-class subcommands while remaining backward-compatible.
+- `MergeMethod` is now defined once (in `models`) and re-exported; the duplicate in `core/github_client.py` was removed.
+- `core/__init__.py` `__getattr__` now covers every name in `__all__` (`TeamInsights`, `create_team_insights`); previously importing them raised `AttributeError`.
+- `Dockerfile` installs the package normally (`pip install .`) instead of editable install (`-e .`).
+- CI workflow `permissions` pinned to `contents: read` (least privilege).
+
+### Removed
+- Stray `test.txt` committed by accident.
+
+- `core/languages/` (seven hand-written regex rule packs) and `core/complexity_scorer.py`, neither used by the review pipeline; external linters now own deterministic discovery.
 ## [1.2.0] - 2026-06-18
 
 ### Added

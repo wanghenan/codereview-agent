@@ -1,0 +1,23 @@
+id: neg-matcher-wrap-log
+kind: negative
+origin: injected
+language: python
+base: python/src/codereview/core/path_matcher.py
+expect:
+  file: python/src/codereview/core/path_matcher.py
+  line: 43
+  line_tolerance: 5
+  category: style
+  severity: low
+  summary: 日志字符串末尾补了一个空格（无行为变化）
+  why: 日志文本多一个尾随空格，不影响逻辑或可解析性。
+tags:
+- formatting
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+  @@ -42,7 +42,7 @@\n         if not _PATHSPEC_AVAILABLE:\n             logger.warning(\n\
+  \                 \"pathspec not installed; exclude_patterns will be ignored. \"\
+  \n-                \"Install pathspec to enable gitignore-style exclusion.\"\n+\
+  \                \"Install pathspec to enable gitignore-style exclusion. \"\n  \
+  \           )\n             return\n \n"
+invalid_reason: 仅把超长日志调用折行，参数与内容不变。

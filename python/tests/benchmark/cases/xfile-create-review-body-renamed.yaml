@@ -1,0 +1,26 @@
+id: xfile-create-review-body-renamed
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/github_client.py
+expect:
+  file: python/src/codereview/core/github_client.py
+  line: 715
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: create_review 的 body 参数被改名，调用方仍传 body=
+  why: 签名改名在 github_client.py 内部自洽（函数体若同步改），但 review_cmd.py 用 body=inline_payload['summary']
+    调用会 TypeError。
+tags:
+- cross-file
+- rename
+diff: "diff --git a/python/src/codereview/core/github_client.py b/python/src/codereview/core/github_client.py\n\
+  --- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
+  @@ -714,7 +714,7 @@\n         self,\n         pr_number: int,\n         comments:\
+  \ list[dict[str, Any]],\n-        body: Optional[str] = None,\n+        summary:\
+  \ Optional[str] = None,\n         event: str = \"COMMENT\",\n     ) -> bool:\n \
+  \        \"\"\"Create a PR review with inline comments.\n"
+cross_file:
+  caller: python/src/codereview/cli/review_cmd.py:228
+  note: review_cmd.py 仍然使用 body=inline_payload['summary']

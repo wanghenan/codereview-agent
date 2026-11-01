@@ -7,10 +7,6 @@ def __getattr__(name):
         from codereview.core.cache import CacheManager
 
         return CacheManager
-    elif name == "VersionDetector":
-        from codereview.core.cache import VersionDetector
-
-        return VersionDetector
     elif name == "ConfigLoader":
         from codereview.core.config import ConfigLoader
 
@@ -59,10 +55,6 @@ def __getattr__(name):
         from codereview.core.github_client import MergeMethod
 
         return MergeMethod
-    elif name == "HistoryTracker":
-        from codereview.core.history_tracker import HistoryTracker
-
-        return HistoryTracker
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -73,15 +65,11 @@ __all__ = [
     "ConfigLoader",
     "create_auto_merger",
     "create_github_client",
-    "create_team_insights",
     "FixOrchestrator",
     "FixResult",
     "FixSuggestion",
     "FixType",
     "GitHubClient",
-    "HistoryTracker",
     "LLMFactory",
     "MergeMethod",
-    "TeamInsights",
-    "VersionDetector",
 ]

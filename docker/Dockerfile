@@ -16,7 +16,7 @@ COPY python/pyproject.toml /app/
 COPY python/README.md /app/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir .
 
 # Create non-root user
 RUN useradd -m -u 1000 codereview && \

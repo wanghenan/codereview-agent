@@ -1,0 +1,23 @@
+id: cache-filename-collision
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/cache.py
+expect:
+  file: python/src/codereview/core/cache.py
+  line: 123
+  line_tolerance: 5
+  category: bug
+  severity: low
+  summary: 缓存文件名只替换正斜杠，Windows 路径会与反斜杠路径冲突
+  why: 去掉对反斜杠的替换后，src\\a.py 与 src/a.py 映射到同一缓存键，在跨平台仓库里会读到别的文件的评审结果。
+tags:
+- cross-platform
+- cache
+diff: "diff --git a/python/src/codereview/core/cache.py b/python/src/codereview/core/cache.py\n\
+  --- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+  @@ -120,7 +120,7 @@\n             Path to cache file\n         \"\"\"\n        \
+  \ # Use safe filename\n-        safe_filename = filename.replace(\"/\", \"_\").replace(\"\
+  \\\\\", \"_\")\n+        safe_filename = filename.replace(\"/\", \"_\")\n      \
+  \   return self.file_cache_dir / f\"{safe_filename}.json\"\n \n     def get(self,\
+  \ filename: str, patch: str) -> Optional[dict]:\n"

@@ -1,0 +1,20 @@
+id: matcher-inverted
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/path_matcher.py
+expect:
+  file: python/src/codereview/core/path_matcher.py
+  line: 70
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: 排除匹配结果被取反，命中规则的文件反而被保留
+  why: 取反后 exclude_patterns 的语义完全反转：测试文件会被评审，源码反而被跳过。
+tags:
+- logic
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+  @@ -67,4 +67,4 @@\n         \"\"\"\n         if self._spec is None:\n          \
+  \   return False\n-        return bool(self._spec.match_file(path))\n+        return\
+  \ not self._spec.match_file(path)\n"

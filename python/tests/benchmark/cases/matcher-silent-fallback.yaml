@@ -1,0 +1,21 @@
+id: matcher-silent-fallback
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/path_matcher.py
+expect:
+  file: python/src/codereview/core/path_matcher.py
+  line: 56
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: pathspec 工厂回退失败时直接抛错，而不是尝试下一种写法
+  why: 原逻辑在旧版 pathspec 上回退到 gitwildmatch；改成 raise 后，较新的 pathspec 版本会让整个评审在初始化阶段崩溃。
+tags:
+- compat
+diff: "diff --git a/python/src/codereview/core/path_matcher.py b/python/src/codereview/core/path_matcher.py\n\
+  --- a/python/src/codereview/core/path_matcher.py\n+++ b/python/src/codereview/core/path_matcher.py\n\
+  @@ -54,7 +54,7 @@\n                 self._spec = pathspec.PathSpec.from_lines(factory,\
+  \ patterns)\n                 break\n             except (ValueError, TypeError):\n\
+  -                continue\n+                raise\n \n     def matches(self, path:\
+  \ str) -> bool:\n         \"\"\"Return True if ``path`` should be excluded.\n"

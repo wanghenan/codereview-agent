@@ -13,15 +13,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
+from codereview.models import MergeMethod
+
 logger = logging.getLogger(__name__)
-
-
-class MergeMethod(str, Enum):
-    """GitHub merge method."""
-
-    SQUASH = "squash"
-    MERGE = "merge"
-    REBASE = "rebase"
 
 
 class MergeState(str, Enum):
@@ -715,6 +709,81 @@ class GitHubClient:
             return result.returncode == 0
         else:
             return await self._post_comment_via_api(owner, repo, pr_number, body)
+
+    async def create_review(
+        self,
+        pr_number: int,
+        comments: list[dict[str, Any]],
+        body: Optional[str] = None,
+        event: str = "COMMENT",
+    ) -> bool:
+        """Create a PR review with inline comments.
+
+        Args:
+            pr_number: PR number
+            comments: Inline comments, each with ``path``, ``line`` and ``body``
+            body: Optional summary body for the review
+            event: Review event (``COMMENT``, ``APPROVE`` or ``REQUEST_CHANGES``)
+
+        Returns:
+            True if the review was created
+        """
+        owner, repo = self._get_repo_info()
+
+        payload: dict[str, Any] = {"event": event, "comments": comments}
+        if body is not None:
+            payload["body"] = body
+
+        if self.gh_available:
+            result = self._run_gh(
+                [
+                    f"pulls/{pr_number}/reviews",
+                    "--method",
+                    "POST",
+                    "--input",
+                    "-",
+                ],
+                input_data=json.dumps(payload),
+            )
+            if result.returncode != 0:
+                logger.error(f"Failed to create review: {result.stderr}")
+                return False
+            return True
+
+        return await self._create_review_via_api(owner, repo, pr_number, payload)
+
+    async def _create_review_via_api(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        payload: dict[str, Any],
+    ) -> bool:
+        """Create a review using GitHub API."""
+        import urllib.error
+        import urllib.request
+
+        url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+        }
+        if self.github_token:
+            headers["Authorization"] = f"Bearer {self.github_token}"
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers=headers,
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                return response.status in (200, 201)
+        except urllib.error.HTTPError as e:
+            logger.error(f"Failed to create review: {e.code} {e.reason}")
+            return False
 
     async def _post_comment_via_api(self, owner: str, repo: str, pr_number: int, body: str) -> bool:
         """Post comment using GitHub API."""

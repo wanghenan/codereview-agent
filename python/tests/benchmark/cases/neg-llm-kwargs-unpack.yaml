@@ -1,0 +1,28 @@
+id: neg-llm-kwargs-unpack
+kind: negative
+origin: injected
+language: python
+base: python/src/codereview/core/llm.py
+expect:
+  file: python/src/codereview/core/llm.py
+  line: 164
+  line_tolerance: 5
+  category: style
+  severity: low
+  summary: 构造参数先放字典再解包（无行为变化）
+  why: 等价的参数传递写法，不改变回退链内容。
+tags:
+- refactor
+diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
+  --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+  @@ -161,10 +161,11 @@\n                 llm = cls.create(config)\n             \
+  \    if attempt == 0:\n                     # First attempt - wrap with fallback\
+  \ chain\n-                    return _FallbackChainLLM(\n-                     \
+  \   primary_llm=llm,\n-                        fallback_configs=all_configs[1:max_attempts],\n\
+  -                    )\n+                    chain_kwargs = {\n+               \
+  \         \"primary_llm\": llm,\n+                        \"fallback_configs\":\
+  \ all_configs[1:max_attempts],\n+                    }\n+                    return\
+  \ _FallbackChainLLM(**chain_kwargs)\n                 else:\n                  \
+  \   # Fallback attempts handled via _FallbackChainLLM\n                     return\
+  \ llm\n"
+invalid_reason: 把构造参数改成字典再解包，等价写法。

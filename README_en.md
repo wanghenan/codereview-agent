@@ -15,6 +15,11 @@
 - 🌐 **6 LLM Providers** - OpenAI, Anthropic, Zhipu AI, MiniMax, Alibaba Cloud, DeepSeek
 - 🚀 **3 Usage Modes** - GitHub Action / Docker / CLI
 - 🔒 **Code Privacy** - Only uploads diffs, not source code
+- 🧰 **Deterministic tools first** - ruff / eslint / semgrep / trufflehog find issues; the LLM only adjudicates
+- 🧾 **Evidence-anchored findings** - every finding carries a category, a confidence and concrete evidence anchors
+- 💬 **Inline PR comments** - the highest-signal findings land on the diff, the rest fold into one summary
+- 📦 **Machine-readable output** - `findings.json` is ready to hand to a coding agent
+- 🔗 **Cross-file context** - a lightweight symbol index feeds callers and importers into the review prompt
 
 ---
 
@@ -145,7 +150,7 @@ python -m codereview.cli --diff diff.json
 > A: Yes. We only upload diffs (changes), not full source code. API calls go directly through your account.
 
 **Q: Which programming languages are supported?**
-> A: Python, JavaScript, TypeScript, Go, Java currently. More coming soon.
+> A: Review itself is LLM-based and language-agnostic. Deterministic checks (ruff, eslint, semgrep, trufflehog) are enabled per changed file type and skipped automatically when the tool is not installed.
 
 **Q: How is confidence calculated?**
 > A: Weighted by severity: Critical=100%, High=75%, Medium=50%, Low=25%. No issues=100%.

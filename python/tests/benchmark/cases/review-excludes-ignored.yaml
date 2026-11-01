@@ -1,0 +1,22 @@
+id: review-excludes-ignored
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/agents/reviewer.py
+expect:
+  file: python/src/codereview/agents/reviewer.py
+  line: 337
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: exclude_patterns 不再生效，被排除的文件仍进入评审
+  why: 跳过逻辑被禁用后，vendor、生成代码、测试文件都会被送进 LLM，噪声与成本同时上升。
+tags:
+- config
+- noise
+diff: "diff --git a/python/src/codereview/agents/reviewer.py b/python/src/codereview/agents/reviewer.py\n\
+  --- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
+  @@ -334,7 +334,7 @@\n \n         for entry in diff_entries:\n             # Skip\
+  \ excluded patterns\n-            if self._should_exclude(entry.filename):\n+  \
+  \          if False:\n                 continue\n \n             # Check cache if\
+  \ available\n"

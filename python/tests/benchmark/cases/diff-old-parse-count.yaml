@@ -1,0 +1,23 @@
+id: diff-old-parse-count
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/cli/diff_parser.py
+expect:
+  file: python/src/codereview/cli/diff_parser.py
+  line: 111
+  line_tolerance: 5
+  category: bug
+  severity: low
+  summary: 旧文件行数同样按 0 兜底，删除统计偏移
+  why: 与新增计数同一缺陷的对称位置：删除 1 行的 hunk 会被统计为 0 行删除。
+tags:
+- parsing
+- stats
+diff: "diff --git a/python/src/codereview/cli/diff_parser.py b/python/src/codereview/cli/diff_parser.py\n\
+  --- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+  @@ -108,7 +108,7 @@\n             match = re.search(r\"@@\\+.*(\\d+)(?:,(\\d+))?\
+  \ -(\\d+)(?:,(\\d+))? @@\", line)\n             if match:\n                 new_count\
+  \ = int(match.group(2) or 1)\n-                old_count = int(match.group(4) or\
+  \ 1)\n+                old_count = int(match.group(4) or 0)\n                 additions\
+  \ += new_count\n                 deletions += old_count\n             patch_lines.append(line)\n"

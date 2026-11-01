@@ -1,0 +1,21 @@
+id: gh-run-no-capture
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/github_client.py
+expect:
+  file: python/src/codereview/core/github_client.py
+  line: 181
+  line_tolerance: 5
+  category: bug
+  severity: high
+  summary: gh 调用不再捕获输出，下游解析 stdout 得到 None
+  why: 调用方依赖 result.stdout 解析 JSON；capture_output=False 时 stdout 为 None，随后 json.loads(None)
+    抛 TypeError。
+tags:
+- subprocess
+diff: "diff --git a/python/src/codereview/core/github_client.py b/python/src/codereview/core/github_client.py\n\
+  --- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
+  @@ -178,7 +178,7 @@\n \n         return subprocess.run(\n             full_args,\n\
+  -            capture_output=True,\n+            capture_output=False,\n        \
+  \     text=True,\n             input=input_data,\n             env=env,\n"

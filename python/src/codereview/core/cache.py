@@ -14,12 +14,6 @@ from codereview.models import ProjectContext
 
 logger = logging.getLogger(__name__)
 
-# Optional imports for version detection
-try:
-    import tomli
-except ImportError:
-    tomli = None
-
 
 class FileReviewCache:
     """Cache for individual file review results to enable incremental review."""
@@ -234,6 +228,45 @@ class FileReviewCache:
 
         return {"total": total, "valid": valid, "expired": expired}
 
+    def cleanup_expired(self) -> int:
+        """Delete expired and corrupt cache files, returning the count removed.
+
+        Unlike :meth:`get` (which leaves expired files on disk and merely
+        returns ``None``) and :meth:`invalidate_all` (which deletes
+        everything), this reclaims disk space by removing only entries whose
+        TTL has elapsed or that are unreadable. Call periodically to bound
+        cache growth under ``.codereview-agent/cache/file_reviews/``.
+
+        Returns:
+            Number of cache files removed.
+        """
+        if not self.file_cache_dir.exists():
+            return 0
+
+        removed = 0
+        now = datetime.now()
+        ttl = timedelta(days=self.cache_ttl_days)
+
+        for cache_file in self.file_cache_dir.glob("*.json"):
+            expired = True
+            try:
+                with open(cache_file) as f:
+                    data = json.load(f)
+                cached_at = datetime.fromisoformat(data.get("cached_at", ""))
+                expired = (now - cached_at) > ttl
+            except Exception as e:
+                # Unreadable / unparseable file counts as expired and is removed.
+                logger.debug(f"Treating unreadable cache file as expired: {cache_file} ({e})")
+
+            if expired:
+                try:
+                    cache_file.unlink()
+                    removed += 1
+                except OSError as e:
+                    logger.debug(f"Could not delete cache file {cache_file}: {e}")
+
+        return removed
+
 
 class CacheManager:
     """Manage project context cache and file review cache."""
@@ -356,59 +389,3 @@ class CacheManager:
             True if cache exists and is valid
         """
         return self.load() is not None
-
-
-class VersionDetector:
-    """Detect project version for cache invalidation."""
-
-    @staticmethod
-    def detect_version(root_dir: Path) -> Optional[str]:
-        """Detect project version from config files.
-
-        Args:
-            root_dir: Project root directory
-
-        Returns:
-            Version string if detected, None otherwise
-        """
-        # Check package.json (Node.js)
-        pkg_json = root_dir / "package.json"
-        if pkg_json.exists():
-            try:
-                with open(pkg_json) as f:
-                    data = json.load(f)
-                    return data.get("version")
-            except Exception as e:
-                logger.debug(f"Could not read version from package.json: {e}")
-
-        # Check pyproject.toml (Python)
-        pyproject = root_dir / "pyproject.toml"
-        if pyproject.exists():
-            try:
-                if tomli is None:
-                    raise ImportError("tomli not installed")
-                with open(pyproject, "rb") as f:
-                    data = tomli.load(f)
-                    return data.get("project", {}).get("version")
-            except ImportError:
-                # tomli not installed, try manual parsing
-                pass
-            except Exception as e:
-                logger.debug(f"Could not read version from pyproject.toml: {e}")
-
-        # Check setup.py, __init__.py version, etc.
-        return None
-
-    @staticmethod
-    def has_config_changed(root_dir: Path, cached_version: str) -> bool:
-        """Check if project config has changed since cached version.
-
-        Args:
-            root_dir: Project root directory
-            cached_version: Version from cache
-
-        Returns:
-            True if config has changed
-        """
-        current_version = VersionDetector.detect_version(root_dir)
-        return current_version != cached_version
