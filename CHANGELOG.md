@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - External tool runner (`core/tool_runner.py`): normalises ruff / eslint / semgrep / trufflehog output into findings; missing tools and failures never abort a review.
 - Inline PR review output (`output/inline.py`): top findings become line comments (capped at 25, ordered by severity then confidence), the rest fold into the summary; `findings.json` payload is returned alongside.
 - `S0` evaluation benchmark (`tests/benchmark/`): 24 injected defect cases plus 6 negative cases, a generator pinned to `HEAD` and a runner producing side-by-side reports.
+- Symbol index (`core/symbol_index.py`, stdlib `ast`, no new dependencies) and bounded cross-file context injection into review prompts (3 neighbours / 2400 chars by default).
 ### Changed
 - `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 

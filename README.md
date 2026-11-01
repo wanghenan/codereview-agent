@@ -119,6 +119,7 @@ python -m codereview.cli --json --diff '{"files": [...]}'
 | 🔄 **自动合并** | 审查通过后自动合并 PR，省去人工操作 |
 | 🔁 **智能重试** | 失败任务自动重试（3次 + 指数退避），不遗漏 |
 | 🧾 **证据锚点** | 每条 finding 带 category / confidence / evidence，可直接交给 coding agent |
+| 🔗 **跨文件上下文** | 索引仓库符号与调用关系，评审时带上调用方/导入方片段 |
 | 📈 **可视化报告** | 清晰的 Markdown 报告，风险分级一目了然 |
 | 🔄 **智能缓存** | 文件级缓存，内容未变即跳过重复评审 |
 | 🧰 **外部工具主干** | ruff / eslint / semgrep / trufflehog 做确定性发现，LLM 只做裁决 |

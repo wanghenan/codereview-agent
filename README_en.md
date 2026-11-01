@@ -19,6 +19,7 @@
 - 🧾 **Evidence-anchored findings** - every finding carries a category, a confidence and concrete evidence anchors
 - 💬 **Inline PR comments** - the highest-signal findings land on the diff, the rest fold into one summary
 - 📦 **Machine-readable output** - `findings.json` is ready to hand to a coding agent
+- 🔗 **Cross-file context** - a lightweight symbol index feeds callers and importers into the review prompt
 
 ---
 
