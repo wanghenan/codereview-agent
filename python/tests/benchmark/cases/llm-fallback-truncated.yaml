@@ -1,0 +1,22 @@
+id: llm-fallback-truncated
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/llm.py
+expect:
+  file: python/src/codereview/core/llm.py
+  line: 197
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: 回退配置被截成 0 个，等价于关闭回退
+  why: 构造函数把上限写成 0，任何传入的 fallback 都被丢弃。
+tags:
+- fallback
+diff: "--- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+  @@ -194,7 +194,7 @@\n             fallback_configs: List of fallback ConfigLLM configs\
+  \ (max 2)\n         \"\"\"\n         self._primary_llm = primary_llm\n-        self._fallback_configs\
+  \ = fallback_configs[:2]  # Max 2 fallbacks\n+        self._fallback_configs = fallback_configs[:0]\
+  \  # Max 2 fallbacks\n         # Lazily-created fallback LLM instances, keyed by\
+  \ chain index, so a\n         # repeatedly-failing primary does not rebuild the\
+  \ network client on\n         # every invoke/ainvoke call.\n"

@@ -1,0 +1,20 @@
+id: cache-context-swallow
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/cache.py
+expect:
+  file: python/src/codereview/core/cache.py
+  line: 330
+  line_tolerance: 5
+  category: maintainability
+  severity: low
+  summary: 项目上下文缓存加载同样吞掉全部异常
+  why: 与文件缓存同一类缺陷：任何异常都被当成缓存未命中，配置或模型变更导致的解析错误不会暴露。
+tags:
+- error-handling
+- cache
+diff: "--- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+  @@ -327,7 +327,7 @@\n                 return None\n \n             return ProjectContext(**data)\n\
+  -        except (json.JSONDecodeError, KeyError, ValueError):\n+        except Exception:\n\
+  \             # Invalid cache, treat as no cache\n             return None\n \n"

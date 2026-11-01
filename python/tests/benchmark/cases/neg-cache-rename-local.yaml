@@ -1,0 +1,21 @@
+id: neg-cache-rename-local
+kind: negative
+origin: injected
+language: python
+base: python/src/codereview/core/cache.py
+expect:
+  file: python/src/codereview/core/cache.py
+  line: 171
+  line_tolerance: 5
+  category: style
+  severity: low
+  summary: 本地变量 data 改名为 payload（无行为变化）
+  why: 同一作用域内的局部变量重命名，不改变任何可观测行为。
+tags:
+- refactor
+diff: "--- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+  @@ -168,7 +168,7 @@\n         cache_path = self._get_cache_path(filename)\n    \
+  \     patch_hash = self._get_file_hash(filename, patch)\n \n-        data = {\n\
+  +        payload = {\n             \"filename\": filename,\n             \"patch_hash\"\
+  : patch_hash,\n             \"cached_at\": datetime.now().isoformat(),\n"
+invalid_reason: 纯局部变量重命名，行为完全一致；指出它属于噪声。

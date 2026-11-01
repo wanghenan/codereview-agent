@@ -1,0 +1,22 @@
+id: cache-invalidate-race
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/cache.py
+expect:
+  file: python/src/codereview/core/cache.py
+  line: 190
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: 失效缓存前不再检查文件存在，并发场景抛 FileNotFoundError
+  why: invalidate 在缓存已被 cleanup 或另一个进程删除时会被调用；去掉 exists 检查后直接 unlink 会中断评审流程。
+tags:
+- io
+- cache
+- race
+diff: "--- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+  @@ -188,8 +188,7 @@\n             filename: File name\n         \"\"\"\n       \
+  \  cache_path = self._get_cache_path(filename)\n-        if cache_path.exists():\n\
+  -            cache_path.unlink()\n+        cache_path.unlink()\n \n     def invalidate_all(self)\
+  \ -> None:\n         \"\"\"Invalidate all file review caches.\"\"\"\n"

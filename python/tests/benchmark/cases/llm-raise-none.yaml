@@ -1,0 +1,19 @@
+id: llm-raise-none
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/llm.py
+expect:
+  file: python/src/codereview/core/llm.py
+  line: 175
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: 所有 provider 失败时抛出 None，掩盖真实错误
+  why: max_attempts 为 0 或全部静默失败时 last_error 为 None，raise None 变成 TypeError，原始故障信息丢失。
+tags:
+- error-handling
+diff: "--- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+  @@ -172,7 +172,7 @@\n                 last_error = e\n                 logger.warning(f\"\
+  Provider {provider_name} failed: {e}\")\n \n-        raise last_error or Exception(\"\
+  All LLM providers failed\")\n+        raise last_error\n \n \n class _FallbackChainLLM:\n"

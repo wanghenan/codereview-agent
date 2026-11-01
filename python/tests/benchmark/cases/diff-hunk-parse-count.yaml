@@ -1,0 +1,23 @@
+id: diff-hunk-parse-count
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/cli/diff_parser.py
+expect:
+  file: python/src/codereview/cli/diff_parser.py
+  line: 110
+  line_tolerance: 5
+  category: bug
+  severity: low
+  summary: hunk 头缺省计数按 0 处理，单行 hunk 的改动行数少算
+  why: git 的 @@ 头里省略计数表示 1 行；用 0 兜底会把这类 hunk 的增删统计算错。
+tags:
+- parsing
+- stats
+diff: "--- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+  @@ -107,7 +107,7 @@\n             # Extract stats from hunk header\n           \
+  \  match = re.search(r\"@@\\+.*(\\d+)(?:,(\\d+))? -(\\d+)(?:,(\\d+))? @@\", line)\n\
+  \             if match:\n-                new_count = int(match.group(2) or 1)\n\
+  +                new_count = int(match.group(2) or 0)\n                 old_count\
+  \ = int(match.group(4) or 1)\n                 additions += new_count\n        \
+  \         deletions += old_count\n"

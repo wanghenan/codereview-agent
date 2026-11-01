@@ -1,0 +1,21 @@
+id: llm-provider-failure-hidden
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/llm.py
+expect:
+  file: python/src/codereview/core/llm.py
+  line: 173
+  line_tolerance: 5
+  category: maintainability
+  severity: low
+  summary: provider 失败日志降级为 debug，切换链路不可观测
+  why: 回退发生时用户看不到主 provider 已失败，排查模型问题时缺少关键线索。
+tags:
+- observability
+diff: "--- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
+  @@ -170,7 +170,7 @@\n                     return llm\n             except Exception\
+  \ as e:\n                 last_error = e\n-                logger.warning(f\"Provider\
+  \ {provider_name} failed: {e}\")\n+                logger.debug(f\"Provider {provider_name}\
+  \ failed: {e}\")\n \n         raise last_error or Exception(\"All LLM providers\
+  \ failed\")\n \n"

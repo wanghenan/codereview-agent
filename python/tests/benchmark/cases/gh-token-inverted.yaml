@@ -1,0 +1,20 @@
+id: gh-token-inverted
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/github_client.py
+expect:
+  file: python/src/codereview/core/github_client.py
+  line: 175
+  line_tolerance: 5
+  category: security
+  severity: medium
+  summary: token 注入条件取反，有 token 时反而不注入
+  why: 条件取反后 GH_TOKEN 只在没有 token 时写入（写入 None），私有仓库调用会退化成匿名访问并失败。
+tags:
+- auth
+diff: "--- a/python/src/codereview/core/github_client.py\n+++ b/python/src/codereview/core/github_client.py\n\
+  @@ -172,7 +172,7 @@\n         full_args = [\"gh\", \"api\", f\"repos/{owner}/{repo}\"\
+  ] + args\n \n         env = os.environ.copy()\n-        if self.github_token:\n\
+  +        if not self.github_token:\n             env[\"GH_TOKEN\"] = self.github_token\n\
+  \             env[\"GITHUB_TOKEN\"] = self.github_token\n \n"

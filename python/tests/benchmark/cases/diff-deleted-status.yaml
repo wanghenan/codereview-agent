@@ -1,0 +1,21 @@
+id: diff-deleted-status
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/cli/diff_parser.py
+expect:
+  file: python/src/codereview/cli/diff_parser.py
+  line: 99
+  line_tolerance: 5
+  category: bug
+  severity: medium
+  summary: 删除文件被标记为新增，评审按新增文件处理
+  why: status 决定评审策略；删除被误标为 added 后，会尝试对已删除文件生成行内建议。
+tags:
+- parsing
+- status
+diff: "--- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+  @@ -97,7 +97,7 @@\n             patch_lines.append(line)\n \n         elif line.startswith(\"\
+  deleted file\"):\n-            current_status = \"deleted\"\n+            current_status\
+  \ = \"added\"\n             patch_lines.append(line)\n \n         elif line.startswith(\"\
+  index \"):\n"

@@ -1,0 +1,22 @@
+id: review-expect-error-swallowed
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/agents/reviewer.py
+expect:
+  file: python/src/codereview/agents/reviewer.py
+  line: 287
+  line_tolerance: 5
+  category: maintainability
+  severity: low
+  summary: 评审任务异常降级为 debug 日志，失败不可见
+  why: 批量评审里单个文件失败被降级后，用户只会看到文件数变少，没有可诊断的线索。
+tags:
+- observability
+diff: "--- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
+  @@ -284,7 +284,7 @@\n                         # to a FileReview on failure, but\
+  \ guard against any\n                         # exception that escapes it so one\
+  \ bad file cannot\n                         # abort the whole batch.\n-        \
+  \                logger.error(f\"Review task failed unexpectedly: {e}\")\n+    \
+  \                    logger.debug(f\"Review task failed unexpectedly: {e}\")\n \
+  \                        pbar.update(1)\n                         continue\n \n"

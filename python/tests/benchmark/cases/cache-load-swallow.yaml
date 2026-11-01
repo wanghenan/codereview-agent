@@ -1,0 +1,20 @@
+id: cache-load-swallow
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/core/cache.py
+expect:
+  file: python/src/codereview/core/cache.py
+  line: 157
+  line_tolerance: 5
+  category: maintainability
+  severity: low
+  summary: 缓存读取捕获所有异常，损坏文件被静默当作未命中
+  why: 改为 except Exception 后，编程错误（如字段名变更导致的 AttributeError）也会被吞掉，缓存损坏不再有任何日志。
+tags:
+- error-handling
+diff: "--- a/python/src/codereview/core/cache.py\n+++ b/python/src/codereview/core/cache.py\n\
+  @@ -154,7 +154,7 @@\n                 return None\n \n             return data.get(\"\
+  result\")\n-        except (json.JSONDecodeError, KeyError, ValueError, FileNotFoundError):\n\
+  +        except Exception:\n             return None\n \n     def save(self, filename:\
+  \ str, patch: str, result: dict) -> None:\n"

@@ -1,0 +1,21 @@
+id: diff-counts-header
+kind: positive
+origin: injected
+language: python
+base: python/src/codereview/cli/diff_parser.py
+expect:
+  file: python/src/codereview/cli/diff_parser.py
+  line: 116
+  line_tolerance: 5
+  category: bug
+  severity: low
+  summary: 文件头 +++ 行被计入新增，行数统计整体偏大
+  why: 去掉 +++ 的排除后，每个文件的头部行会被计为一次新增，PR 规模统计失真。
+tags:
+- parsing
+- stats
+diff: "--- a/python/src/codereview/cli/diff_parser.py\n+++ b/python/src/codereview/cli/diff_parser.py\n\
+  @@ -113,7 +113,7 @@\n                 deletions += old_count\n             patch_lines.append(line)\n\
+  \ \n-        elif line.startswith(\"+\") and not line.startswith(\"+++\"):\n+  \
+  \      elif line.startswith(\"+\"):\n             additions += 1\n             patch_lines.append(line)\n\
+  \ \n"
