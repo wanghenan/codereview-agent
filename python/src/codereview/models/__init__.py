@@ -126,6 +126,18 @@ class ReviewConclusion(str, Enum):
     NEEDS_REVIEW = "needs_review"
 
 
+class SkipRecord(BaseModel):
+    """A diff entry removed by the admission filter before review.
+
+    Kept intentionally minimal so it can be serialized into ``findings.json``
+    and summarized in one line on the PR without another schema change.
+    """
+
+    filename: str
+    reason: str
+    detail: str = ""
+
+
 class ReviewResult(BaseModel):
     """Complete review result."""
 
@@ -134,6 +146,10 @@ class ReviewResult(BaseModel):
     files_reviewed: list[FileReview]
     summary: str
     cache_info: Optional[CacheInfo] = None
+    skipped: list[SkipRecord] = Field(
+        default_factory=list,
+        description="Diff entries filtered out before review (S3 admission layer)",
+    )
 
 
 class CacheInfo(BaseModel):
