@@ -155,6 +155,20 @@ python -m codereview.cli --pr 123
 python -m codereview.cli fix --pr 123
 ```
 
+### Dry-run 与离线模式
+
+想先看看会向 PR 写入哪些行内评论、又不想真的提交时，可以加 `--dry-run` 或 `--offline`：
+
+```bash
+# 构建行内评审载荷但不提交；本地报告与 findings 照常生成
+python -m codereview.cli --pr 123 --dry-run
+
+# 等价于 --dry-run，且不创建 GitHub client、不发起 GitHub 请求
+python -m codereview.cli --pr 123 --offline
+```
+
+两者的区别：`--dry-run` 只跳过行内评论的提交；`--offline` 等价于 `--dry-run`，并额外保证不创建 GitHub client、完全不碰 GitHub 网络，适合离线环境或纯本地调试。两个开关都不影响评审本身、本地报告与退出码（评审仍会调用你配置的 LLM）。
+
 ### CLI 参数
 
 | 参数 | 简写 | 说明 |
@@ -167,6 +181,8 @@ python -m codereview.cli fix --pr 123
 | `--output` | `-o` | 报告输出路径 |
 | `--json` | | 输出 JSON 格式 |
 | `--no-cache` | | 禁用文件级缓存 |
+| `--dry-run` | | 构建行内评审载荷但不提交 |
+| `--offline` | | 等价于 `--dry-run`，且完全不访问 GitHub 网络 |
 
 ### Review 子命令
 

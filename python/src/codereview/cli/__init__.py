@@ -186,6 +186,24 @@ def main():
 
     parser.add_argument("--no-cache", action="store_true", help="Disable file-level review caching")
 
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Build the inline review payload but do not post it to GitHub "
+            "(findings are still reported locally)"
+        ),
+    )
+
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help=(
+            "Never post anything and never create a GitHub client: equivalent "
+            "to --dry-run for the inline review payload, with no GitHub network access"
+        ),
+    )
+
     # Auto-merge arguments
     parser.add_argument(
         "--auto-merge",
@@ -340,6 +358,8 @@ def main():
                 github_token=args.token,
                 merge_dry_run=not args.apply_auto_merge,
                 disabled_rules=disabled_rules,
+                dry_run=args.dry_run,
+                offline=args.offline,
             )
         )
 
