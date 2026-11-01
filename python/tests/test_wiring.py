@@ -137,13 +137,19 @@ async def test_orchestrator_surfaces_skipped_records(
     assert [review.file_path for review in result.files_reviewed] == ["src/main.py"]
 
 
-async def test_tool_findings_are_converted_and_error_entries_do_not_raise(
+async def test_tool_findings_are_converted_and_runner_diagnostics_are_dropped(
     config: Config,
     mock_llm: MagicMock,
     project_context: ProjectContext,
     tmp_path,
 ) -> None:
-    """Tool output becomes source=tool findings even when it contains errors."""
+    """Tool output becomes source=tool findings; runner diagnostics do not.
+
+    A runner error entry ("ruff exited 2", "eslint is not installed", or ruff
+    refusing a file a new-file diff has not created) describes the runner. A
+    reviewer would never leave that as a comment on the change, so it is logged
+    instead of converted.
+    """
     runner = MagicMock()
     runner.timeout = 60.0
     runner.list_tools.return_value = [object()]
@@ -178,7 +184,7 @@ async def test_tool_findings_are_converted_and_error_entries_do_not_raise(
     review = await agent._review_file(_entry("src/main.py"))
 
     tool_issues = [issue for issue in review.issues if issue.source == "tool"]
-    assert len(tool_issues) == 2
+    assert len(tool_issues) == 1
 
     high = tool_issues[0]
     assert high.file_path == "src/main.py"
@@ -189,12 +195,8 @@ async def test_tool_findings_are_converted_and_error_entries_do_not_raise(
     assert high.evidence[0].kind == EvidenceKind.RULE
     assert high.evidence[0].detail == "ruff_F401"
 
-    # An error entry is still safe to convert: it falls back to the reviewed
-    # path and never aborts the file review.
-    error = tool_issues[1]
-    assert error.file_path == "src/main.py"
-    assert error.line_number is None
-    assert error.category == IssueCategory.MAINTAINABILITY
+    # The diagnostic entry is neither converted nor allowed to abort the review.
+    assert all(issue.line_number is not None for issue in tool_issues)
 
     runner.run.assert_called_once_with(["src/main.py"], cwd=tmp_path)
 

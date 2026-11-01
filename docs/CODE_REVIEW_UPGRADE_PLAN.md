@@ -133,6 +133,8 @@
 | S3 准入层 | ✅ 已合入 `4b926a5` + 接线 `4ea859a` | filter + token 预算 + `ReviewResult.skipped` |
 | S4 工具接入 | ✅ 已合入 `e7ef370` + 接线 `4ea859a` + 过滤 `6d4617a` | tool_runner；删除 7 套正则语言包与 complexity_scorer（净 -3158 行）；`min_confidence=0.5` 降噪 |
 | S6 去重 + 团队记忆 | ✅ `core/dedupe.py` | 行内评论带指纹标记，同一 PR 二次评审 0 条重复；`.codereview-agent/memory.json` 记录 👎 驳回，命中降权（×0.5^n，下限 0.25）不丢弃；跳过的条目进 `ReviewResult.skipped` |
+| S0+ 真实语料 | ✅ 8 条，见 `docs/EVAL_SET_DESIGN.md` | `collect_real_prs.py` 抓 6 个公开仓库的真人 review 评论；`bench.py --origin real-pr` 在 base commit 的 tarball 上评审。语义命中 **2/8**（注入样本是 24/24）——首次得到可信的真实语料数字 |
+| S0+ 评测口径 | ✅ 同 PR | 新增 `strictness`（defect/design/nit）与 `review_comment` 溯源；明确「±3 行只作候选，真实语料必须人工判是否同一问题」 |
 
 ### 并行实施（worktree 分工）
 

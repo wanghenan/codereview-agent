@@ -341,6 +341,35 @@ def _error_finding(tool: str, rule_id: str, description: str) -> Finding:
     )
 
 
+def _relativise_findings(findings: list[Finding], cwd: PathLike) -> list[Finding]:
+    """Rewrite absolute tool paths as paths relative to the scanned root.
+
+    Tools disagree about path form: ruff echoes the relative path it was given
+    when it can resolve a project root, but reports an absolute one otherwise
+    (no pyproject.toml, a path outside the root, another tool's own resolving).
+    Findings are matched against repository-relative diff entries and posted as
+    inline PR comments, and GitHub rejects an absolute path, so normalise here
+    rather than in every normaliser.
+    """
+    try:
+        root = Path(cwd).resolve()
+    except OSError:  # unreadable cwd: keep the findings exactly as reported
+        return findings
+
+    normalised: list[Finding] = []
+    for finding in findings:
+        raw = finding.get("file")
+        if raw:
+            path = Path(str(raw))
+            if path.is_absolute():
+                try:
+                    finding = {**finding, "file": path.resolve().relative_to(root).as_posix()}
+                except (OSError, ValueError):
+                    pass  # outside the scanned root: leave it visible as reported
+        normalised.append(finding)
+    return normalised
+
+
 class ToolRunner:
     """Run available external tools against a set of changed paths."""
 
@@ -494,9 +523,10 @@ class ToolRunner:
             ]
 
         try:
-            if spec.name == "trufflehog":
-                return normaliser(stdout)
-            return normaliser(json.loads(stdout))
+            parsed = normaliser(stdout) if spec.name == "trufflehog" else normaliser(
+                json.loads(stdout)
+            )
+            return _relativise_findings(parsed, cwd)
         except Exception as exc:  # malformed output must never abort the run
             return [
                 _error_finding(

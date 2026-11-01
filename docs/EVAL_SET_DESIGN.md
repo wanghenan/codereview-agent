@@ -279,3 +279,80 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 | 平均最高置信度 | 0.95 | 0.95 |
 
 顺带修掉一个基准自身的错误：`cross_file` 里记录的调用方行号是早期版本的行号，S5 接线后代码下移了 20–30 行，导致"模型说对了却判错"。刷新元数据后，模型此前输出的 `1084 / 1242 / 661 / 228` 全部命中。**又一个尺子坏掉的例子——这次是基准数据过期。**
+
+### 真实 PR 语料（8 条，2026-11-01）
+
+前面所有数字都建立在**注入样本**上：我们照着当前代码把缺陷重新敲进去，再让模型读 diff。它能证明"看得见的问题不会漏"，但回答不了评审真正的难题——**真人 reviewer 会不会认为这里有问题**。本仓库历史 PR 没有实质人工 review，所以语料取自公开仓库。
+
+**采集（`collect_real_prs.py`）**
+
+```bash
+python tests/benchmark/collect_real_prs.py --repo django/django --min-comments 10 --max-prs 8
+python tests/benchmark/collect_real_prs.py --list          # 回看已抓的草稿
+```
+
+- 用 search API 找"已合并、非 bot 作者、讨论多（`comments:>=N`）"的 PR，再取它的 inline review comment（`subject_type=line`）；
+- 排除：回复串、PR 作者自评、bot（含 AI reviewer）、` ```suggestion ` 开头的纯改写建议；
+- 按"缺陷词表"（`breaks/crash/None/race/raises/...`）给评论打分排序，减掉"加测试/补文档"这类过程性意见；
+- 每条评论只切出它所在的 hunk（+前一个 hunk 作上下文），保留原始 `@@` 行号——**diff 仍能 `git apply`**，但体积可控；
+- 草稿写进 `drafts/`（gitignore），人读一遍后把 `expect` 填实、补 `strictness`，才晋升到 `cases/`。
+
+**用例格式**：在原有 schema 上增加四个字段。
+
+```yaml
+origin: real-pr
+repo: django/django
+base_commit: d44ee518c4…      # PR 的 base sha
+pr: 15687
+strictness: defect            # defect=具体故障 / design=设计或语义缺陷 / nit=API 细节
+review_comment: {author: bluetech, url: "…discussion_r1161316259", body: "…"}
+```
+
+**跑在别人的树上**：`real_pr.py` 用 `gh api repos/<repo>/tarball/<sha>` 把 base commit 解到 `.repos/`（gitignore），`bench.py` 评审时 chdir 进去。必须这样——项目分析、符号索引、外部工具全读 `cwd`，否则读到的是 crAgent 自己的代码，等于拿错仓库评审。
+
+```bash
+python tests/benchmark/bench.py --all --origin real-pr --config <bench.yaml> --out reports/real-pr-8.md
+python tests/benchmark/bench.py --validate --origin real-pr     # 校验 8 条 diff 都能应用到 base
+```
+
+**语料（8 条，6 个仓库）**
+
+| 用例 | 位置 | 类别 | strictness |
+|---|---|---|---|
+| `real-django-psycopg3-tzloader` | django#15687 `psycopg_any.py:34` | bug/high | defect |
+| `real-drf-datetime-local-none-format` | drf#9365 `renderers.py:352` | bug/medium | defect |
+| `real-pandas-series-extension-dtype-check` | pandas#19520 `series.py:217` | bug/medium | defect |
+| `real-pandas-timedeltaarray-freq-no-validation` | pandas#24024 `timedeltas.py:188` | maintainability/low | design |
+| `real-matplotlib-hist-colors-sequence` | matplotlib#28073 `_axes.py:7222` | bug/medium | defect |
+| `real-django-enqueue-on-commit-single-db` | django#18627 `backends/base.py:50` | bug/medium | design |
+| `real-aiohttp-cause-without-traceback` | aiohttp#8089 `helpers.py:830` | maintainability/low | design |
+| `real-requests-timedcache-keyerror` | requests#3885 `structures.py:169` | maintainability/low | nit |
+
+**结果（deepseek-chat，单文件切片，上下文开）**
+
+| 指标 | 数字 |
+|---|---|
+| 行号 ±3 有 finding 落到同一位置 | 5 / 8 |
+| **语义命中（人工判"同一问题"）** | **2 / 8**（drf、pandas-series；后者措辞含糊，只说"is_dtype 语义可能不符"） |
+| 报在同块、但不是同一问题（部分） | 2 / 8（matplotlib、pandas-timedeltas） |
+| 完全没碰到 | 4 / 8 |
+| 每例 finding 数 | 5–39，均值 ~17 |
+
+对照注入样本的 24/24，这个落差是本轮最重要的结论：**注入基准测的是"读 diff 的能力"，真实评审要的是"知道这段代码在真实世界会怎么坏"**。psycopg 那条例子的正确答案依赖 `TimestamptzLoader` 返回 UTC 这一外部知识；requests 那条是 API 契约细节；django 多库那条是框架级设计约束——三者都不在 diff 里。
+
+**这一轮暴露的产品缺陷（都已修/记录）**
+
+1. 工具输出的路径是绝对路径（ruff 在无法确定项目根时会这样报）。行内评论和 diff 匹配都要仓库相对路径，GitHub 也会拒。→ `tool_runner._relativise_findings()` 在 normalise 边界统一转相对。
+2. 工具**诊断**被当成评审意见：新文件的 diff 在 base 上不存在，ruff 报 `os error 2`，流水线把它变成一条 MEDIUM finding。→ `reviewer.TOOL_DIAGNOSTIC_RULES` 丢弃 `tool_error`/`tool_timeout`/`tool_unavailable`。
+3. 自建规则层误报：`if task_func_args[0] != "context"` 被判成 `[Rule: SQL injection risk]`，HIGH、conf 0.9。这正是方案里"外部 linter 主干、owasp 规则降为补充"要解决的问题，但现在它还在生产路径上（**未修**）。
+4. finding 锚在块首而非出错行：drf 那条最准的 finding 报在 343 行，人类评论在 352 行（Δ9）。行内评论会贴错位置，行号指标也把它判成 miss（**未修**）。
+
+**采集时踩的坑（都是"语料本身会撒谎"）**
+
+1. 评论可能已被后续提交修掉：django#18056 已加 `field.generated` 检查、redis#1660 已在循环后 raise。**必须对照最终 diff 逐条确认缺陷仍在**。
+2. 过程性意见不是缺陷："add unittests"、"move this comment down"占比很高。
+3. AI reviewer 混在真人里：celery#10346/#9799 是 Copilot，pydantic#9459 是 AI 中文评审（`author_association: NONE` + 固定 emoji 前缀），按 `user.type` 与文风剔除。
+4. 证据落在切片外：pip#5952 的矛盾点在 `handle_401`，而评论锚在 `_get_new_credentials`——案例对模型不公平，弃用。
+5. 行号锚在 outdated diff（`line: null`）的评论无法用，直接丢。
+
+**判分口径**：行号 ±3 只作候选，不看语义。真实语料必须人工判"是不是同一问题"，否则像上面 drf 那条会被尺子判成 miss，而 requests 的 Δ3 命中其实是另一件事。
