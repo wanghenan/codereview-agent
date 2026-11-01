@@ -209,3 +209,19 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 被去掉的是 `neg-cache-rename-local`（confidence 0.40 的"如果后面还有代码引用…"式猜测）；剩下的一条是 `neg-llm-kwargs-unpack`（confidence 0.75，LOW，风格建议"多了一层字典解包"）。
 
 **这条剩余误报怎么处理**：它属于 `maintainability` 类别的风格意见。两条路——`drop_categories: [maintainability]` 会连真正的可维护性问题一起丢，太粗暴；`drop_low_risk_llm: true` 能精准去掉它，但同样会丢掉唯一依赖 LOW 命中的正例（`llm-provider-failure-hidden`，conf 0.55）。当前选择保留：一条 LOW 级风格评论的代价，小于丢掉一条真实问题。
+
+### 加入跨文件上下文后（S5，同日）
+
+报告：`python/tests/benchmark/reports/with-context.md`。
+
+| 指标 | 过滤前 | 过滤后 | 跨文件上下文 |
+|---|---|---|---|
+| 正例命中 | 24 / 24 | 24 / 24 | **24 / 24** |
+| 负例误报 | 2 / 6 | 1 / 6 | **1 / 6** |
+| 每例耗时 | ~3 s | ~3 s | ~3–4 s |
+
+**结论：这套基准测不出跨文件上下文的价值。** 原因是构造使然——24 条注入缺陷都是单文件局部改动（超时缺失、信号量被删、计数偏移），仅凭 diff 就能定位；`neighbors` 注入的是"谁调用我"，对这类缺陷没有信息增量。
+
+它也不是免费的：每个文件最多 2400 字符（≈600 tokens）。按 3 条邻居 / 2400 字符的默认值，评审输入成本上升约 20–30%。
+
+**因此这条能力需要专门的用例才能验证**，下一步应补 6 条"跨文件缺陷"样本，形态是：改 A 的函数签名/返回值语义，而破坏发生在 B 的调用点——只读 diff 看不出，只有读到 caller 才能判断。在此之前，默认值保持开启（真实 PR 的跨文件改动比这套注入样本复杂），但不应宣称它已被基准证明有效。
