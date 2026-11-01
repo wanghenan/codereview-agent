@@ -1,0 +1,53 @@
+id: real-pandas-series-extension-dtype-check
+kind: positive
+origin: real-pr
+language: python
+repo: pandas-dev/pandas
+base_commit: cd1b168cf0fe12d3d850e2f98e3e7164c649f274
+pr: 19520
+pr_title: 'ENH: Allow storing ExtensionArrays in containers'
+strictness: defect
+review_comment:
+  author: jorisvandenbossche
+  url: https://github.com/pandas-dev/pandas/pull/19520#discussion_r168924788
+  body: Side note (maybe I should open an issue, if there is none yet), but `is_dtype` will always return
+    True for Categoricals, whatever the categories/ordered attributes, I think? Is this actually what
+    we want? As currently doing `pd.Series(pd.Categorical(['a', 'b']), dtype=CategoricalDType(categories=['A',
+    'B']))` will just ignore the `dtype` instead of raising an error / coercing.
+expect:
+  file: pandas/core/series.py
+  line: 217
+  line_tolerance: 3
+  category: bug
+  severity: medium
+  summary: 用 data.dtype.is_dtype(dtype) 判兼容：Categorical 恒为 True，dtype 被静默忽略
+  why: CategoricalDtype.is_dtype 只看 dtype 家族，不看 categories/ordered，pd.Series(pd.Categorical(['a','b']),
+    dtype=CategoricalDtype(['A','B'])) 既不报错也不 coerce，传入的 dtype 直接丢失。
+tags:
+- real-pr
+- dtype
+- extension-array
+diff: "diff --git a/pandas/core/series.py b/pandas/core/series.py\nindex 90dc14836ab55..12865bfe44a3b\
+  \ 100644\n--- a/pandas/core/series.py\n+++ b/pandas/core/series.py\n@@ -173,12 +175,17 @@ def __init__(self,\
+  \ data=None, index=None, dtype=None, name=None,\n                 raise NotImplementedError(\"initializing\
+  \ a Series from a \"\n                                           \"MultiIndex is not supported\")\n\
+  \             elif isinstance(data, Index):\n-                # need to copy to avoid aliasing issues\n\
+  \                 if name is None:\n                     name = data.name\n \n-                data\
+  \ = data._to_embed(keep_tz=True, dtype=dtype)\n+                if dtype is not None:\n+           \
+  \         # astype copies\n+                    data = data.astype(dtype)\n+                else:\n\
+  +                    # need to copy to avoid aliasing issues\n+                    data = data._values.copy()\n\
+  \                 copy = False\n+\n             elif isinstance(data, np.ndarray):\n               \
+  \  pass\n             elif isinstance(data, Series):\n@@ -203,13 +210,15 @@ def __init__(self, data=None,\
+  \ index=None, dtype=None, name=None,\n                                          '`data` argument and\
+  \ a different '\n                                          '`index` argument.  `copy` must '\n     \
+  \                                     'be False.')\n-            elif isinstance(data, Categorical):\n\
+  +\n+            elif is_extension_array_dtype(data) and dtype is not None:\n                 # GH12574:\
+  \ Allow dtype=category only, otherwise error\n-                if ((dtype is not None) and\n-      \
+  \                  not is_categorical_dtype(dtype)):\n-                    raise ValueError(\"cannot\
+  \ specify a dtype with a \"\n-                                     \"Categorical unless \"\n-      \
+  \                               \"dtype='category'\")\n+                if not data.dtype.is_dtype(dtype):\n\
+  +                    raise ValueError(\"Cannot specify a dtype '{}' with an \"\n+                  \
+  \                   \"extension array of a different \"\n+                                     \"dtype\
+  \ ('{}').\".format(dtype,\n+                                                            data.dtype))\n\
+  +\n             elif (isinstance(data, types.GeneratorType) or\n                   (compat.PY3 and isinstance(data,\
+  \ map))):\n                 data = list(data)\n"

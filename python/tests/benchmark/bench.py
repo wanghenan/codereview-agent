@@ -16,13 +16,22 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+if __package__:
+    from . import real_pr
+else:  # direct script execution: python tests/benchmark/bench.py
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import real_pr  # type: ignore[no-redef]
 
 BENCH_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BENCH_DIR.parents[2]
@@ -48,18 +57,21 @@ def load_cases(only: str | None = None) -> list[dict[str, Any]]:
 
 
 def validate(case: dict[str, Any]) -> str | None:
-    """Return an error message if the case diff does not apply to HEAD.
+    """Return an error message if the case diff does not apply to its base tree.
 
-    ``--cached`` checks against the index rather than the working tree, so a
-    half-finished local refactor cannot invalidate the benchmark.
+    Injected cases are checked against this repo's index (``--cached``), so a
+    half-finished local refactor cannot invalidate the benchmark. Real-PR cases
+    are checked against the extracted upstream commit, where there is no index
+    and the working tree *is* the base.
     """
-    proc = subprocess.run(
-        ["git", "apply", "--check", "--cached", "-"],
-        cwd=REPO_ROOT,
-        input=case["diff"],
-        capture_output=True,
-        text=True,
-    )
+    checkout = real_pr.case_checkout(case)
+    if checkout is not None:
+        cmd = ["git", "apply", "--check", "-"]
+        cwd = checkout
+    else:
+        cmd = ["git", "apply", "--check", "--cached", "-"]
+        cwd = REPO_ROOT
+    proc = subprocess.run(cmd, cwd=cwd, input=case["diff"], capture_output=True, text=True)
     if proc.returncode == 0:
         return None
     return proc.stderr.strip().splitlines()[0] if proc.stderr.strip() else "git apply failed"
@@ -74,22 +86,42 @@ def _entries(case: dict[str, Any]) -> list[dict[str, Any]]:
     return [e.model_dump() for e in parse_git_diff_to_entries(case["diff"])]
 
 
+@contextmanager
+def _working_directory(path: Path) -> Iterator[None]:
+    """Temporarily chdir: the pipeline analyses the project at ``Path.cwd()``."""
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
+
+
 async def run_case(case: dict[str, Any], config_path: Path) -> dict[str, Any]:
     """Run one case through the real review pipeline."""
     from codereview.cli.review_cmd import run_review
 
+    checkout = real_pr.case_checkout(case)
     started = time.monotonic()
-    payload = await run_review(
-        config_path=config_path,
-        diff_input=json.dumps(_entries(case)),
-        output_only=True,
-        disable_cache=True,
-        # Reuse the analysed project context across cases; re-analysing per case
-        # would spend one LLM call per benchmark item for no extra signal.
-        force_refresh=False,
-    )
+    # Real-PR cases must see the upstream tree, not this repository: project
+    # analysis, the symbol index and the external tools all read ``cwd``.
+    with _working_directory(checkout) if checkout is not None else _null_context():
+        payload = await run_review(
+            config_path=config_path,
+            diff_input=json.dumps(_entries(case)),
+            output_only=True,
+            disable_cache=True,
+            # Reuse the analysed project context across cases; re-analysing per
+            # case would spend one LLM call per benchmark item for no signal.
+            force_refresh=False,
+        )
     elapsed = time.monotonic() - started
     return {"result": payload["result"], "elapsed": elapsed}
+
+
+@contextmanager
+def _null_context() -> Iterator[None]:
+    yield
 
 
 def findings_of(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -155,8 +187,8 @@ def render(results: list[dict[str, Any]], out: Path) -> str:
         f"cases: {len(results)} · repo: `{REPO_ROOT.name}` · "
         f"config: `{DEFAULT_CONFIG.name}`",
         "",
-        "| case | kind | findings | elapsed | verdict |",
-        "|---|---|---|---|---|",
+        "| case | origin | kind | findings | elapsed | verdict |",
+        "|---|---|---|---|---|---|",
     ]
     for item in results:
         case = item["case"]
@@ -166,8 +198,8 @@ def render(results: list[dict[str, Any]], out: Path) -> str:
             else "☐ tn ☐ fp (noise)"
         )
         lines.append(
-            f"| `{case['id']}` | {case['kind']} | {len(item['findings'])} | "
-            f"{item['elapsed']:.1f}s | {verdict} |"
+            f"| `{case['id']}` | {case.get('origin', 'injected')} | {case['kind']} | "
+            f"{len(item['findings'])} | {item['elapsed']:.1f}s | {verdict} |"
         )
 
     for item in results:
@@ -185,6 +217,13 @@ def render(results: list[dict[str, Any]], out: Path) -> str:
                 f"[{expect['severity']}/{expect['category']}] {expect['summary']}"
             )
             reason = expect["why"]
+        source_line = ""
+        if case.get("origin") == "real-pr":
+            comment = case.get("review_comment") or {}
+            source_line = (
+                f"source: {case['repo']}#{case['pr']} · human comment by "
+                f"{comment.get('author', '?')} · {comment.get('url', '')}"
+            )
         lines += [
             "",
             f"## {case['id']} · {case['kind']} · {', '.join(case.get('tags', []))}",
@@ -193,8 +232,10 @@ def render(results: list[dict[str, Any]], out: Path) -> str:
             "",
             f"why: {reason}",
             "",
-            "**findings**",
         ]
+        if source_line:
+            lines += [source_line, ""]
+        lines += ["**findings**"]
         if item["findings"]:
             lines += [_fmt_finding(row) for row in item["findings"]]
         else:
@@ -219,13 +260,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="report path (markdown)")
     parser.add_argument("--kind", choices=["positive", "negative"], help="filter by kind")
     parser.add_argument("--tag", help="only run cases carrying this tag")
+    parser.add_argument(
+        "--origin",
+        choices=["injected", "real-pr"],
+        help="only run cases from this origin",
+    )
     args = parser.parse_args(argv)
+
+    # Real-PR cases chdir into their checkout, so a relative --config would be
+    # resolved against another repository's tree.
+    config_path = args.config.expanduser().resolve()
 
     cases = load_cases(args.case)
     if args.kind:
         cases = [c for c in cases if c["kind"] == args.kind]
     if args.tag:
         cases = [c for c in cases if args.tag in (c.get("tags") or [])]
+    if args.origin:
+        cases = [c for c in cases if c.get("origin", "injected") == args.origin]
 
     problems = 0
     for case in cases:
@@ -242,15 +294,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if not (args.all or args.case):
         parser.error("choose --all, --case or --validate")
-    if not args.config.exists():
-        print(f"config not found: {args.config}", file=sys.stderr)
+    if not config_path.exists():
+        print(f"config not found: {config_path}", file=sys.stderr)
         return 2
 
     results = []
     for case in cases:
         print(f"running {case['id']} ...", file=sys.stderr)
         try:
-            run = asyncio.run(run_case(case, args.config))
+            run = asyncio.run(run_case(case, config_path))
             findings = pair(case, findings_of(run["result"]))
             results.append(
                 {"case": case, "findings": findings, "elapsed": run["elapsed"], "error": None}

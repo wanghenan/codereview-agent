@@ -1,0 +1,56 @@
+id: real-pandas-timedeltaarray-freq-no-validation
+kind: positive
+origin: real-pr
+language: python
+repo: pandas-dev/pandas
+base_commit: aa7cb0138da6e20b356e8d9ae1f184e78a04189f
+pr: 24024
+pr_title: 'REF: DatetimeLikeArray'
+strictness: design
+review_comment:
+  author: jbrockmendel
+  url: https://github.com/pandas-dev/pandas/pull/24024#discussion_r243105181
+  body: Not doing frequency validation here seems like an invitation to problems.  Users are going to
+    assume `TimedeltaArray.__init__` is public and pass incorrect values here and we'll fail to raise.
+expect:
+  file: pandas/core/arrays/timedeltas.py
+  line: 188
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: TimedeltaArray.__init__ 只 to_offset(freq)，不校验 freq 与 values 是否一致
+  why: freq 与数据精度不匹配（例如逐小时数据标 freq='D'）不会报错，后续依赖 freq 的方法会给出错误结果；__init__ 是公开入口，用户会以为它会校验。
+tags:
+- real-pr
+- validation
+- freq
+diff: "diff --git a/pandas/core/arrays/timedeltas.py b/pandas/core/arrays/timedeltas.py\nindex 78570be8dc07f..b747e2b6b096b\
+  \ 100644\n--- a/pandas/core/arrays/timedeltas.py\n+++ b/pandas/core/arrays/timedeltas.py\n@@ -33,6 +33,8\
+  \ @@\n \n from . import datetimelike as dtl\n \n+_BAD_DTYPE = \"dtype {dtype} cannot be converted to\
+  \ timedelta64[ns]\"\n+\n \n def _to_m8(key):\n     \"\"\"\n@@ -142,25 +144,56 @@ def dtype(self):\n\
+  \     # Constructors\n     _attributes = [\"freq\"]\n \n-    @classmethod\n-    def _simple_new(cls,\
+  \ values, freq=None, dtype=_TD_DTYPE):\n-        # `dtype` is passed by _shallow_copy in corner cases,\
+  \ should always\n-        #  be timedelta64[ns] if present\n-        assert dtype == _TD_DTYPE\n-  \
+  \      assert isinstance(values, np.ndarray), type(values)\n+    def __init__(self, values, dtype=_TD_DTYPE,\
+  \ freq=None, copy=False):\n+        if isinstance(values, (ABCSeries, ABCIndexClass)):\n+          \
+  \  values = values._values\n+\n+        if isinstance(values, type(self)):\n+            values, freq,\
+  \ freq_infer = extract_values_freq(values, freq)\n+\n+        if not isinstance(values, np.ndarray):\n\
+  +            msg = (\n+                \"Unexpected type '{}'. 'values' must be a TimedeltaArray \"\n\
+  +                \"ndarray, or Series or Index containing one of those.\"\n+            )\n+       \
+  \     raise ValueError(msg.format(type(values).__name__))\n \n         if values.dtype == 'i8':\n- \
+  \           values = values.view('m8[ns]')\n+            # for compat with datetime/timedelta/period\
+  \ shared methods,\n+            #  we can sometimes get here with int64 values.  These represent\n+\
+  \            #  nanosecond UTC (or tz-naive) unix timestamps\n+            values = values.view(_TD_DTYPE)\n\
+  \ \n-        assert values.dtype == 'm8[ns]'\n+        if values.dtype != _TD_DTYPE:\n+            raise\
+  \ TypeError(_BAD_DTYPE.format(dtype=values.dtype))\n \n-        result = object.__new__(cls)\n-    \
+  \    result._data = values\n-        result._freq = freq\n-        return result\n+        try:\n+ \
+  \           dtype_mismatch = dtype != _TD_DTYPE\n+        except TypeError:\n+            raise TypeError(_BAD_DTYPE.format(dtype=dtype))\n\
+  +        else:\n+            if dtype_mismatch:\n+                raise TypeError(_BAD_DTYPE.format(dtype=dtype))\n\
+  \ \n-    def __new__(cls, values, freq=None, dtype=_TD_DTYPE, copy=False):\n-        return cls._from_sequence(values,\
+  \ dtype=dtype, copy=copy, freq=freq)\n+        if freq == \"infer\":\n+            msg = (\n+      \
+  \          \"Frequency inference not allowed in TimedeltaArray.__init__. \"\n+                \"Use\
+  \ 'pd.array()' instead.\"\n+            )\n+            raise ValueError(msg)\n+\n+        if copy:\n\
+  +            values = values.copy()\n+        if freq:\n+            freq = to_offset(freq)\n+\n+  \
+  \      self._data = values\n+        self._dtype = dtype\n+        self._freq = freq\n+\n+    @classmethod\n\
+  +    def _simple_new(cls, values, freq=None, dtype=_TD_DTYPE):\n+        return cls(values, dtype=dtype,\
+  \ freq=freq)\n \n     @classmethod\n     def _from_sequence(cls, data, dtype=_TD_DTYPE, copy=False,\n"
