@@ -23,7 +23,12 @@ from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.finding_filter import FilterRules, filter_findings
 from codereview.core.path_matcher import ExcludeMatcher
 from codereview.core.symbol_index import Neighbor, SymbolIndex
-from codereview.core.tool_runner import ToolRunner
+from codereview.core.tool_runner import (
+    RULE_TOOL_ERROR,
+    RULE_TOOL_TIMEOUT,
+    RULE_TOOL_UNAVAILABLE,
+    ToolRunner,
+)
 from codereview.models import (
     Config,
     DiffEntry,
@@ -40,6 +45,10 @@ from codereview.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Tool-runner rule ids that report the runner's own trouble.  They are logged
+#: and counted elsewhere, never turned into review comments.
+TOOL_DIAGNOSTIC_RULES = frozenset({RULE_TOOL_ERROR, RULE_TOOL_TIMEOUT, RULE_TOOL_UNAVAILABLE})
 
 #: Directories ignored while looking for the newest Python source.  Kept in
 #: sync with ``codereview.core.symbol_index`` so freshness checks see the same
@@ -666,6 +675,12 @@ class ReviewAgent:
         issues: list[FileIssue] = []
         for finding in findings or []:
             if not isinstance(finding, dict):
+                continue
+            if str(finding.get("rule_id") or "") in TOOL_DIAGNOSTIC_RULES:
+                # Runner diagnostics (missing binary, timeout, ruff failing on a
+                # file that a "new file" diff has not created yet) describe the
+                # runner, not the change. Posting them as review comments is
+                # noise a reviewer would never write.
                 continue
             try:
                 issues.append(self._tool_finding_to_issue(filename, finding))

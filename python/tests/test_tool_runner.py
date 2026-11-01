@@ -390,6 +390,41 @@ class TestRun:
         assert captured["kwargs"]["timeout"] == 60.0
         assert "shell" not in captured["kwargs"]
 
+    def test_absolute_paths_are_made_relative_to_the_scanned_root(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        """ruff reports absolute paths when it cannot resolve a project root."""
+        monkeypatch.setattr(tool_runner.shutil, "which", _fake_which({"ruff"}))
+        absolute = tmp_path / "src" / "app.py"
+        (tmp_path / "src").mkdir()
+        absolute.write_text("import os\n", encoding="utf-8")
+
+        def fake_run(command, **kwargs):
+            payload = [{**RUFF_SAMPLE[0], "filename": str(absolute)}]
+            return _completed(json.dumps(payload), returncode=1)
+
+        monkeypatch.setattr(tool_runner.subprocess, "run", fake_run)
+
+        findings = ToolRunner(tools=[_spec("ruff")]).run(["src/app.py"], tmp_path)
+
+        assert findings[0]["file"] == "src/app.py"
+
+    def test_paths_outside_the_scanned_root_stay_as_reported(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path
+    ) -> None:
+        monkeypatch.setattr(tool_runner.shutil, "which", _fake_which({"ruff"}))
+        outside = tmp_path.parent / "elsewhere" / "app.py"
+
+        def fake_run(command, **kwargs):
+            payload = [{**RUFF_SAMPLE[0], "filename": str(outside)}]
+            return _completed(json.dumps(payload), returncode=1)
+
+        monkeypatch.setattr(tool_runner.subprocess, "run", fake_run)
+
+        findings = ToolRunner(tools=[_spec("ruff")]).run(["src/app.py"], tmp_path)
+
+        assert findings[0]["file"] == str(outside)
+
     def test_no_paths_returns_empty_without_running(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path
     ) -> None:
