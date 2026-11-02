@@ -8,6 +8,7 @@ Usage::
 
     python -m tests.benchmark.bench --validate
     python -m tests.benchmark.bench --all --out reports/2026-11-15.md
+    python -m tests.benchmark.bench --all --json-out reports/2026-11-15.json
     python -m tests.benchmark.bench --case matcher-inverted
 """
 
@@ -22,6 +23,7 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +167,22 @@ def pair(case: dict[str, Any], findings: list[dict[str, Any]]) -> list[dict[str,
     return findings
 
 
+def candidate_hit(findings: list[dict[str, Any]]) -> tuple[bool, int | None]:
+    """Return whether a finding is a candidate hit and its closest distance.
+
+    "Candidate" is the weak machine-checkable signal from :func:`pair`: same
+    file as ``expect`` and a line number within ``line_tolerance``. It is only
+    used for gating regressions, never as a semantic verdict. For a negative
+    case a hit means the reviewer reported the harmless change (a false
+    positive).
+    """
+    candidates = [row for row in findings if row.get("match") in ("candidate", "file-level")]
+    if not candidates:
+        return False, None
+    deltas = [int(row["delta"]) for row in candidates if row.get("delta") is not None]
+    return True, min(deltas) if deltas else None
+
+
 # --------------------------------------------------------------------------- #
 # report
 # --------------------------------------------------------------------------- #
@@ -180,27 +198,42 @@ def _fmt_finding(row: dict[str, Any]) -> str:
     )
 
 
-def render(results: list[dict[str, Any]], out: Path) -> str:
+def _candidate_cell(item: dict[str, Any]) -> str:
+    if not item.get("matched"):
+        return "—"
+    delta = item.get("best_delta")
+    return f"✅ Δ{delta}" if delta is not None else "✅ file"
+
+
+def render(
+    results: list[dict[str, Any]],
+    out: Path,
+    config_path: Path = DEFAULT_CONFIG,
+) -> str:
     lines = [
         "# Benchmark run",
         "",
-        f"cases: {len(results)} · repo: `{REPO_ROOT.name}` · "
-        f"config: `{DEFAULT_CONFIG.name}`",
+        f"cases: {len(results)} · repo: `{REPO_ROOT.name}` · config: `{config_path.name}`",
         "",
-        "| case | origin | kind | findings | elapsed | verdict |",
-        "|---|---|---|---|---|---|",
+        "| case | origin | kind | findings | candidate | elapsed | verdict |",
+        "|---|---|---|---|---|---|---|",
     ]
     for item in results:
         case = item["case"]
-        verdict = (
-            "☐ hit ☐ partial ☐ miss"
-            if case["kind"] == "positive"
-            else "☐ tn ☐ fp (noise)"
-        )
+        verdict = "☐ hit ☐ partial ☐ miss" if case["kind"] == "positive" else "☐ tn ☐ fp (noise)"
         lines.append(
             f"| `{case['id']}` | {case.get('origin', 'injected')} | {case['kind']} | "
-            f"{len(item['findings'])} | {item['elapsed']:.1f}s | {verdict} |"
+            f"{len(item['findings'])} | {_candidate_cell(item)} | "
+            f"{item['elapsed']:.1f}s | {verdict} |"
         )
+
+    lines += [
+        "",
+        "`candidate` (and `matched` in `--json-out`) only marks a finding on the same file "
+        "and within `line_tolerance` of the expected line. It is a regression gate, **not** "
+        "a semantic verdict; real-PR cases still need a human to confirm the finding is the "
+        "same issue. On negative cases a candidate means the harmless change was reported.",
+    ]
 
     for item in results:
         case = item["case"]
@@ -251,6 +284,42 @@ def render(results: list[dict[str, Any]], out: Path) -> str:
 # --------------------------------------------------------------------------- #
 # entry point
 # --------------------------------------------------------------------------- #
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> Path:
+    """Write the machine-readable report consumed by ``gate.py``.
+
+    ``matched``/``best_delta`` come from :func:`candidate_hit`: same file and a
+    line within tolerance. This is a regression signal only, never proof of a
+    semantic hit.
+    """
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "config": _display_path(config_path),
+        "cases": [
+            {
+                "id": item["case"]["id"],
+                "origin": item["case"].get("origin", "injected"),
+                "kind": item["case"]["kind"],
+                "findings": len(item["findings"]),
+                "matched": bool(item["matched"]),
+                "best_delta": item["best_delta"],
+                "elapsed": round(float(item["elapsed"]), 2),
+                "error": item["error"],
+            }
+            for item in results
+        ],
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--all", action="store_true", help="run every case")
@@ -258,6 +327,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--validate", action="store_true", help="only check diffs apply")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--out", type=Path, help="report path (markdown)")
+    parser.add_argument(
+        "--json-out",
+        type=Path,
+        help="machine-readable report path (JSON, compared by gate.py)",
+    )
     parser.add_argument("--kind", choices=["positive", "negative"], help="filter by kind")
     parser.add_argument("--tag", help="only run cases carrying this tag")
     parser.add_argument(
@@ -304,20 +378,36 @@ def main(argv: list[str] | None = None) -> int:
         try:
             run = asyncio.run(run_case(case, config_path))
             findings = pair(case, findings_of(run["result"]))
+            matched, best_delta = candidate_hit(findings)
             results.append(
-                {"case": case, "findings": findings, "elapsed": run["elapsed"], "error": None}
+                {
+                    "case": case,
+                    "findings": findings,
+                    "elapsed": run["elapsed"],
+                    "error": None,
+                    "matched": matched,
+                    "best_delta": best_delta,
+                }
             )
         except Exception as exc:  # noqa: BLE001 - report, keep the batch going
             print(f"  error: {exc}", file=sys.stderr)
-            results.append({"case": case, "findings": [], "elapsed": 0.0, "error": str(exc)})
+            results.append(
+                {
+                    "case": case,
+                    "findings": [],
+                    "elapsed": 0.0,
+                    "error": str(exc),
+                    "matched": False,
+                    "best_delta": None,
+                }
+            )
 
     out = args.out or BENCH_DIR / "reports" / f"run-{time.strftime('%Y%m%d-%H%M')}.md"
-    render(results, out)
-    try:
-        shown = out.resolve().relative_to(REPO_ROOT)
-    except ValueError:
-        shown = out
-    print(f"report: {shown}")
+    render(results, out, config_path)
+    print(f"report: {_display_path(out)}")
+    if args.json_out:
+        json_out = write_json(results, args.json_out.expanduser(), config_path)
+        print(f"json: {_display_path(json_out)}")
     return 0
 
 

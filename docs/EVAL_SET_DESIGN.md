@@ -356,3 +356,26 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 8 条 d
 5. 行号锚在 outdated diff（`line: null`）的评论无法用，直接丢。
 
 **判分口径**：行号 ±3 只作候选，不看语义。真实语料必须人工判"是不是同一问题"，否则像上面 drf 那条会被尺子判成 miss，而 requests 的 Δ3 命中其实是另一件事。
+
+### 夜间门禁（nightly，2026-11-01）
+
+`bench.py --json-out` 把每条用例的候选命中写成 JSON（schema 见脚本 docstring）：
+
+```json
+{"generated_at": "...", "config": "...", "cases": [
+  {"id": "...", "origin": "real-pr", "kind": "positive", "findings": 17,
+   "matched": true, "best_delta": 2, "elapsed": 15.2, "error": null}]}
+```
+
+`gate.py` 读取这份 JSON 与签入的 `baseline.json`，按 origin 比较正例的候选命中数；低于基线减 `--tolerance`（默认 0）即退出码 1，并打印未命中的用例名。用例数少于基线（或多于基线，说明基线该刷新）同样判失败。
+
+| 分组 | 基线 | 来源 |
+|---|---|---|
+| `real_pr` | 5 / 8 | 上面「真实 PR 语料」一轮实测（±3 行） |
+| `injected` | 30 / 30 | 24 条 S0 注入（24/24，±5 行）+ 6 条跨文件用例（6/6，±5 行） |
+
+基线是各轮实测结果的组合；首次 nightly 若与实测有出入，以实际报告刷新 `baseline.json`（同时确认差异是模型噪声还是真回归）。
+
+`.github/workflows/benchmark.yml` 每天 18:00 UTC 跑一次（也可手动 `workflow_dispatch`）：Python 3.11、`pip install -e "python[dev]"`、`bench.py --validate`、`bench.py --all --config tests/benchmark/bench.yaml --json-out ...`、`gate.py`，报告与 JSON 作为 artifact 上传。仓库没有 `DEEPSEEK_API_KEY`（fork / 未配 secret）时整个作业跳过并输出 notice，不会红。
+
+**门禁只看候选命中，不看语义**：它用来发现"这次改动让基准变差"的量级回归，不能代替上面 2/8 的人工语义判定。
