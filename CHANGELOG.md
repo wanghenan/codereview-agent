@@ -7,11 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Rules now scan code only: `rules/code_only.py` blanks comments and docstrings before matching while keeping every line number and inline string literal intact (Python via `tokenize`, other languages best effort for `#`, `//` and `/* ... */`). Prose such as `# Never eval() untrusted input.` no longer produces HIGH findings, and unparsable input is returned unchanged instead of raising.
-- LLM JSON parsing accepts provider content-block replies: Anthropic-compatible gateways answer with a list of `thinking` + `text` blocks, which `JsonOutputParser` could not read (empty "Invalid json output"). `core/llm_output.py` now takes the text blocks, strips fences and prose, and the reviewer, project analyzer and fixer all use it.
+## [1.3.0] - 2026-11-02
 
 ### Added
+- Dedupe and team memory (S6): inline comments carry a hidden fingerprint marker, a re-review of the same PR posts no duplicate, and dismissals recorded in `.codereview-agent/memory.json` downweight matching findings instead of dropping them.
+- Real-PR benchmark corpus (20 cases from 9 public repositories) collected from human review comments, with `strictness` (`defect`/`design`/`nit`) and a `--json-out` report; `gate.py` + a nightly workflow compare candidate hits against a checked-in baseline.
+- `context.neighbors_trigger` (`always` | `signature`): optionally inject cross-file context only when the edited lines are confined to a definition header.
+- `--dry-run` and `--offline` flags for the review CLI.
 - `LICENSE` (MIT) file and `[project.license]` metadata in `pyproject.toml` (previously declared but missing).
 - Automated release workflow (`.github/workflows/release.yml`): tag-triggered, runs a self-contained quality gate (ruff + pytest), builds wheel/sdist, and publishes a GitHub Release with notes extracted from CHANGELOG.md. Pre-release tags (e.g. `v1.2.0-rc1`) are auto-marked as prerelease.
 - Project URLs (`Homepage`, `Repository`, `Changelog`, `Issues`) in `pyproject.toml` so built artifacts carry complete metadata.
@@ -19,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI Python version matrix (3.10 / 3.11 / 3.12) so all declared `requires-python` versions are exercised.
 - `.dockerignore` to keep `.git`, caches, venvs, and local output out of the Docker build context.
 - `FileReviewCache.cleanup_expired()` to prune expired/corrupt cache files; invoked once per review run to bound `.codereview-agent/cache/` growth.
-
 - Evidence-anchored findings: every issue now carries `category`, `confidence`, `evidence` anchors, an optional `suggested_patch` and its `source` (`rule`/`tool`/`llm`).
 - Admission filter (`core/diff_filter.py`): skips binaries, generated files and lock files, enforces per-file/total token budgets and reports skipped files on `ReviewResult.skipped`.
 - External tool runner (`core/tool_runner.py`): normalises ruff / eslint / semgrep / trufflehog output into findings; missing tools and failures never abort a review.
@@ -28,21 +29,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Symbol index (`core/symbol_index.py`, stdlib `ast`, no new dependencies) and bounded cross-file context injection into review prompts (3 neighbours / 2400 chars by default).
 - `llm.headers` config to send extra HTTP headers on every LLM request (e.g. `x-opencode-session` for opencode-go gateways).
 - `llm.maxTokens` config to cap (or raise) output tokens per request; unset keeps the client default.
-### Changed
-- Review prompts now show each diff line's new-file line number (`core/diff_numbering.py`): context lines render as `  121 | ...`, added lines as `+ 123 | ...` and deleted lines keep a blank number field. `{patch}` carries the numbered diff while cache keys, dedupe fingerprints and inline-comment positioning still use the raw patch; the prompt requires `line_number` to be one of the displayed numbers, so findings anchor on the failing line instead of the hunk header.
-- `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 
 ### Changed
+- The real-PR collector slices each case at the reviewed comment's commit (`original_commit_id` and its parent) instead of the PR head, so the diff matches the code the human actually saw; `--final-diff` keeps the old behaviour.
+- Review prompts now show each diff line's new-file line number (`core/diff_numbering.py`): context lines render as `  121 | ...`, added lines as `+ 123 | ...` and deleted lines keep a blank number field. `{patch}` carries the numbered diff while cache keys, dedupe fingerprints and inline-comment positioning still use the raw patch; the prompt requires `line_number` to be one of the displayed numbers, so findings anchor on the failing line instead of the hunk header.
+- `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 - CLI entry point switched from `main` to a top-level `cli()` dispatcher backed by argparse subparsers; `codereview fix` and `codereview merge` are now first-class subcommands while remaining backward-compatible.
 - `MergeMethod` is now defined once (in `models`) and re-exported; the duplicate in `core/github_client.py` was removed.
 - `core/__init__.py` `__getattr__` now covers every name in `__all__` (`TeamInsights`, `create_team_insights`); previously importing them raised `AttributeError`.
 - `Dockerfile` installs the package normally (`pip install .`) instead of editable install (`-e .`).
 - CI workflow `permissions` pinned to `contents: read` (least privilege).
 
+### Fixed
+- Rules now scan code only: `rules/code_only.py` blanks comments and docstrings before matching while keeping every line number and inline string literal intact (Python via `tokenize`, other languages best effort for `#`, `//` and `/* ... */`). Prose such as `# Never eval() untrusted input.` no longer produces HIGH findings, and unparsable input is returned unchanged instead of raising.
+- LLM JSON parsing accepts provider content-block replies: Anthropic-compatible gateways answer with a list of `thinking` + `text` blocks, which `JsonOutputParser` could not read (empty "Invalid json output"). `core/llm_output.py` now takes the text blocks, strips fences and prose, and the reviewer, project analyzer and fixer all use it.
+
 ### Removed
 - Stray `test.txt` committed by accident.
-
 - `core/languages/` (seven hand-written regex rule packs) and `core/complexity_scorer.py`, neither used by the review pipeline; external linters now own deterministic discovery.
+
 ## [1.2.0] - 2026-06-18
 
 ### Added
