@@ -13,7 +13,7 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 
 from codereview.agents.reviewer import ReviewAgent, ReviewOrchestrator
-from codereview.core.symbol_index import SymbolIndex, definition_header_ranges, definition_spans
+from codereview.core.symbol_index import SymbolIndex, definition_spans
 from codereview.models import (
     Config,
     ConfigContext,
@@ -346,8 +346,8 @@ def _body_change_entry() -> DiffEntry:
     )
 
 
-def test_definition_header_ranges_cover_decorators_params_and_one_liners() -> None:
-    """Header ranges start at decorators and end before the body."""
+def test_definition_spans_cover_decorators_params_and_one_liners() -> None:
+    """Spans start at decorators and their header ends before the body."""
     source = (
         "@lru_cache\n"
         "def target(\n"
@@ -362,7 +362,7 @@ def test_definition_header_ranges_cover_decorators_params_and_one_liners() -> No
         "def one(): return 1\n"
     )
 
-    assert sorted(definition_header_ranges(source)) == [(1, 5), (8, 8), (11, 11)]
+    assert sorted(definition_spans(source)) == [(1, 6, 5), (8, 9, 8), (11, 11, 11)]
 
 
 def test_definition_spans_include_nested_definitions() -> None:
