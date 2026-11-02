@@ -252,8 +252,8 @@ class ConfigContext(BaseModel):
     neighbors_trigger: Literal["always", "signature"] = Field(
         default="always",
         description=(
-            "Inject neighbours on every change, or only when changed lines "
-            "touch a definition header"
+            "Inject neighbours on every change, or only when a change is "
+            "confined to a definition header"
         ),
     )
     max_neighbors: int = Field(

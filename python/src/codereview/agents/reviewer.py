@@ -22,7 +22,7 @@ from tqdm import tqdm
 from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.finding_filter import FilterRules, filter_findings
 from codereview.core.path_matcher import ExcludeMatcher
-from codereview.core.symbol_index import Neighbor, SymbolIndex, definition_header_ranges
+from codereview.core.symbol_index import Neighbor, SymbolIndex, definition_spans
 from codereview.core.tool_runner import (
     RULE_TOOL_ERROR,
     RULE_TOOL_TIMEOUT,
@@ -588,15 +588,20 @@ class ReviewAgent:
                 new_line += 1
         return lines
 
-    def _touches_definition_header(self, entry: DiffEntry) -> bool:
-        """Return whether a changed line falls in a definition header.
+    def _is_signature_edit(self, entry: DiffEntry) -> bool:
+        """Return whether the change is confined to definition headers.
 
-        Used when ``context.neighbors_trigger`` is ``signature``: the header is
-        the decorator block, ``def``/``class`` line, parameter list and return
-        annotation of a definition in the reviewed file.  Every failure
-        (deleted, missing or unreadable file, invalid Python, stale line
-        numbers) is treated as "no header touched" so injection is skipped and
-        the review continues.
+        Used when ``context.neighbors_trigger`` is ``signature``.  A definition
+        counts as signature-edited when at least one changed line falls inside
+        it and every changed line inside it is part of its header (decorators,
+        ``def``/``class`` line, parameter list, return annotation).  A body
+        edit in the same definition disqualifies it; module-level changes
+        (imports, constants, module statements) belong to no definition and
+        never qualify.  Any definition may qualify.
+
+        Every failure (deleted, missing or unreadable file, invalid Python,
+        stale line numbers) is treated as "not a signature edit" so injection
+        is skipped and the review continues.
         """
         if entry.status == "deleted":
             return False
@@ -611,12 +616,16 @@ class ReviewAgent:
             return False
 
         try:
-            ranges = definition_header_ranges(source)
+            spans = definition_spans(source)
         except (SyntaxError, ValueError, RecursionError) as exc:
             logger.debug("Skipping signature trigger for unparseable %s: %s", entry.filename, exc)
             return False
 
-        return any(start <= line <= end for line in changed_lines for start, end in ranges)
+        for start, end, header_end in spans:
+            inside = [line for line in changed_lines if start <= line <= end]
+            if inside and all(line <= header_end for line in inside):
+                return True
+        return False
 
     def _cross_file_context_for(self, entry: DiffEntry) -> str:
         """Render bounded one-hop neighbours for the file under review.
@@ -642,7 +651,7 @@ class ReviewAgent:
             return ""
 
         signature_only = context_config.neighbors_trigger == "signature"
-        if signature_only and not self._touches_definition_header(entry):
+        if signature_only and not self._is_signature_edit(entry):
             return ""
 
         try:

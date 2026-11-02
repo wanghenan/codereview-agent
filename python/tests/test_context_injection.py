@@ -13,7 +13,7 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 
 from codereview.agents.reviewer import ReviewAgent, ReviewOrchestrator
-from codereview.core.symbol_index import SymbolIndex, definition_header_ranges
+from codereview.core.symbol_index import SymbolIndex, definition_header_ranges, definition_spans
 from codereview.models import (
     Config,
     ConfigContext,
@@ -365,6 +365,21 @@ def test_definition_header_ranges_cover_decorators_params_and_one_liners() -> No
     assert sorted(definition_header_ranges(source)) == [(1, 5), (8, 8), (11, 11)]
 
 
+def test_definition_spans_include_nested_definitions() -> None:
+    """A span covers the whole definition while its header ends before the body."""
+    source = (
+        "@dec\n"
+        "def outer(\n"
+        "    a,\n"
+        "):\n"
+        "    def inner():\n"
+        "        return a\n"
+        "    return inner()\n"
+    )
+
+    assert sorted(definition_spans(source)) == [(1, 7, 4), (5, 6, 5)]
+
+
 def test_default_trigger_still_injects_for_body_only_changes(tmp_path: Path) -> None:
     """The default ``always`` keeps injecting for body-level edits."""
     _callers_repo(tmp_path)
@@ -477,6 +492,96 @@ def test_signature_trigger_skips_body_only_changes(tmp_path: Path) -> None:
     assert agent._cross_file_context_for(header_entry).startswith("## Cross-file context")
 
     assert agent._cross_file_context_for(entry) == ""
+
+
+def test_signature_trigger_rejects_signature_plus_body_edit(tmp_path: Path) -> None:
+    """A body edit in the same definition disqualifies a header change."""
+    _write(tmp_path, "lib.py", "def target(a, b):\n    return a + 1\n")
+    _write(
+        tmp_path,
+        "app.py",
+        "from lib import target\n\ndef use():\n    return target(1, 2)\n",
+    )
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=2,
+        deletions=2,
+        patch=(
+            "@@ -1,2 +1,2 @@\n"
+            "-def target(a):\n"
+            "-    return a\n"
+            "+def target(a, b):\n"
+            "+    return a + 1"
+        ),
+    )
+
+    assert _agent_for(tmp_path)._cross_file_context_for(entry).startswith("## Cross-file context")
+    assert _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry) == ""
+
+
+@pytest.mark.parametrize(
+    ("source", "patch"),
+    [
+        (
+            "import sys\nimport os\n\ndef target():\n    return 1\n",
+            "@@ -1,3 +1,4 @@\n+import sys\n import os\n \n def target():",
+        ),
+        (
+            "FOO = 2\n\ndef target():\n    return 1\n",
+            "@@ -1,3 +1,3 @@\n-FOO = 1\n+FOO = 2\n \n def target():",
+        ),
+    ],
+)
+def test_signature_trigger_skips_module_level_edits(
+    tmp_path: Path, source: str, patch: str
+) -> None:
+    """Imports and module constants belong to no definition and never inject."""
+    _callers_repo(tmp_path)
+    _write(tmp_path, "lib.py", source)
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch=patch,
+    )
+
+    assert _agent_for(tmp_path)._cross_file_context_for(entry).startswith("## Cross-file context")
+    assert _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry) == ""
+
+
+def test_signature_trigger_uses_innermost_definition_for_nested_edits(tmp_path: Path) -> None:
+    """An inner signature edit injects even when the outer body also changed."""
+    _write(
+        tmp_path,
+        "lib.py",
+        "def outer():\n    x = 2\n    def inner(a, b):\n        return a\n    return inner(1, 2)\n",
+    )
+    _write(
+        tmp_path,
+        "app.py",
+        "from lib import outer\n\ndef use():\n    return outer()\n",
+    )
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=2,
+        deletions=2,
+        patch=(
+            "@@ -1,5 +1,5 @@\n"
+            " def outer():\n"
+            "-    x = 1\n"
+            "-    def inner(a):\n"
+            "+    x = 2\n"
+            "+    def inner(a, b):\n"
+            "     return inner(1, 2)"
+        ),
+    )
+
+    context = _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry)
+
+    assert context.startswith("## Cross-file context")
 
 
 def test_signature_trigger_maps_pure_deletions_to_the_new_side(tmp_path: Path) -> None:
