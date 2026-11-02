@@ -224,7 +224,10 @@ class TestBodyRendering:
         assert "- symbol: build_query()" in body
         assert "```diff" in body
         assert "+good" in body
-        assert body.rstrip().endswith("```")
+        assert "```" in body
+        # The dedupe marker is the last line, so it never breaks the rendering.
+        assert body.splitlines()[-1].startswith("<!-- cr-agent-fingerprint: ")
+        assert "```\n\n<!-- cr-agent-fingerprint:" in body
 
     def test_uses_first_description_line_when_title_missing(self):
         issue = _issue(title="", description="First line of the finding\nMore detail here.")

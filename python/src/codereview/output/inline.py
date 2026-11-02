@@ -9,8 +9,9 @@ review summary body. ``findings_payload`` is the same data as plain dicts for
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
+from codereview.core.dedupe import marker_for
 from codereview.models import FileIssue, ReviewResult, RiskLevel
 
 MAX_INLINE_COMMENTS = 25
@@ -31,11 +32,15 @@ class InlineCommentBuilder:
     them on the diff.
     """
 
-    def build(self, review_result: ReviewResult) -> dict[str, Any]:
+    def build(
+        self, review_result: ReviewResult, notes: Optional[list[str]] = None
+    ) -> dict[str, Any]:
         """Build the review payload.
 
         Args:
             review_result: Complete review result to render.
+            notes: Optional one-line remarks appended to the summary, such as
+                how many findings dedupe suppressed.
 
         Returns:
             A dict with ``comments`` (``[{"path", "line", "body"}]``) and
@@ -65,10 +70,11 @@ class InlineCommentBuilder:
             for issue in selected
         ]
 
-        return {
-            "comments": comments,
-            "summary": self._render_summary(review_result.summary, folded),
-        }
+        summary = self._render_summary(review_result.summary, folded)
+        if notes:
+            summary = "\n".join([summary, "", *[f"- {note}" for note in notes]]).strip()
+
+        return {"comments": comments, "summary": summary}
 
     def findings_payload(self, review_result: ReviewResult) -> list[dict[str, Any]]:
         """Return every finding as a JSON-serialisable dict for ``findings.json``.
@@ -114,6 +120,10 @@ class InlineCommentBuilder:
 
         if issue.suggested_patch:
             lines.extend(["```diff", issue.suggested_patch.rstrip(), "```"])
+
+        # The marker is invisible on the PR page and lets the next run match
+        # this comment exactly instead of guessing from the rendered text.
+        lines.extend(["", marker_for(issue)])
 
         return "\n".join(lines).strip()
 

@@ -1,0 +1,11 @@
+# Configuration for the nightly real-corpus benchmark (docs/EVAL_SET_DESIGN.md).
+# DEEPSEEK_API_KEY is injected by .github/workflows/benchmark.yml; when the
+# secret is missing the workflow skips the job instead of running with no key.
+llm:
+  provider: deepseek
+  apiKey: ${DEEPSEEK_API_KEY}
+  model: deepseek-chat
+  temperature: 0.2
+
+filters:
+  min_confidence: 0.5
