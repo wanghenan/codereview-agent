@@ -344,7 +344,7 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 8 条 d
 
 1. 工具输出的路径是绝对路径（ruff 在无法确定项目根时会这样报）。行内评论和 diff 匹配都要仓库相对路径，GitHub 也会拒。→ `tool_runner._relativise_findings()` 在 normalise 边界统一转相对。
 2. 工具**诊断**被当成评审意见：新文件的 diff 在 base 上不存在，ruff 报 `os error 2`，流水线把它变成一条 MEDIUM finding。→ `reviewer.TOOL_DIAGNOSTIC_RULES` 丢弃 `tool_error`/`tool_timeout`/`tool_unavailable`。
-3. 自建规则层误报：`if task_func_args[0] != "context"` 被判成 `[Rule: SQL injection risk]`，HIGH、conf 0.9。这正是方案里"外部 linter 主干、owasp 规则降为补充"要解决的问题，但现在它还在生产路径上（**未修**）。
+3. 自建规则层误报：SQL 注入规则把 docstring 里的 "executed" 当成 SQL（`if task_func_args[0] != "context"` 那条的实际原因是规则命中了附近的文档字符串），且 finding 行号取自拼接后的新增行下标而非新文件真实行号，行内评论会贴到错误位置。→ 收紧 `OWASP-A01-003` 至真实 SQL 调用点，`detect_in_diff()` 解析 hunk 头映射新文件行号（**已修**：#34 / PR #36）。
 4. finding 锚在块首而非出错行：drf 那条最准的 finding 报在 343 行，人类评论在 352 行（Δ9）。行内评论会贴错位置，行号指标也把它判成 miss（**未修**）。
 
 **采集时踩的坑（都是"语料本身会撒谎"）**
