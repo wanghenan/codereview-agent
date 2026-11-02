@@ -376,12 +376,47 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 8 条 d
 
 也就是说：**在正文级改动上，注入的"谁调用我"没有信息增量，反而会挤掉本来会出现的 finding**——prompt 变长后模型把注意力放在跨文件关系上，忽略了眼前那行 `res.replace(tzinfo=...)`。
 
-**关键词代理的局限**：它只看同文件 finding 里有没有出现 `tzinfo / is_dtype / freq` 这类词，模型"提一嘴"就算命中，比行号宽松、比人工判读宽松。所以上表第二行只能当趋势，不能当结论；真正可信的是 psycopg 那条——上下文关掉后三轮都精确落在问题行，开着三轮都没有。
+**关键词代理的局限**：它只看同文件 finding 里有没有出现 `tzinfo / is_dtype / freq` 这类词，模型"提一嘴"就算命中，比行号宽松、比人工判读宽松。所以上表第二行只能当趋势，不能当结论。
+
+> **2026-11-02 更正**：上面把 psycopg 当成"注入挤掉正文 finding"的证据，复测不成立——同一用例、同一份配置，上下文开的 3 轮全部落在 `psycopg_any.py:30`（Δ4，finding 正文就写着 `res.replace(tzinfo=self.timezone)`），见下一节。这一条大概率是当日模型侧波动，不应再作为"注入有害"的依据。
 
 **决定**：`context.neighbors` 默认**保持开启**。理由是跨文件用例上的收益是具体且大的（点名调用方 0/6 → 6/6），而真实语料的损失目前只观察到一处、且样本 8 条不足以推翻。但把代价写在这里，并且记下下一步该做什么：
 
 1. **按改动形态开关**：只当改动的行落在函数签名 / 装饰器 / 参数列表时注入邻域；正文级改动不注入。这样既能保住签名变更的收益，又不为"改个 if"付 token 和注意力成本。
 2. 语料扩到 20 条后再跑一次 3×2，并按 `strictness` 分层统计——8 条里只有 4 条是 `defect`，剩下的是 design/nit，混在一起算命中率会被软用例稀释。
+
+### `neighbors_trigger: signature` 的三臂对照（3 轮 × 3 臂，2026-11-02）
+
+上一条"按改动形态开关"已实现为 `context.neighbors_trigger: always | signature`（默认 `always`，行为不变）。`signature` 的判定比"有改动行落在头部区间"更严：**只有当某个定义自身的改动全部落在头部**（装饰器 / `def` / `class` / 参数列表 / 返回注解）才注入；同一定义里改了正文就不算，模块层改动（import、常量）也不算。头部区间由 `symbol_index.definition_spans()` 用 stdlib `ast` 算，不给 `Symbol` 加字段、不改索引 JSON schema。
+
+方法：8 条真实用例 × 3 臂（`always` / `signature` / `off`）× 3 轮，`deepseek-chat`、temperature 0.2，用例为行号修正后（#29/#31）的版本。Δ = 同文件 LLM finding 与期望行的最近距离，工具 finding 不计。
+
+| 用例 | `always` Δ中位（±3 命中/3 轮） | `signature` | `off` |
+|---|---|---|---|
+| `real-aiohttp-cause-without-traceback` | 7（0/3） | **3（2/3）** | 12（0/3） |
+| `real-django-enqueue-on-commit-single-db` | 4（0/3） | 4（0/3） | 4（0/3） |
+| `real-django-psycopg3-tzloader` | 4（0/3） | 4（0/3） | 4（0/3） |
+| `real-drf-datetime-local-none-format` | 0（2/3） | 1（**3/3**） | 1（**3/3**） |
+| `real-matplotlib-hist-colors-sequence` | 1（3/3） | 2（3/3） | 2（3/3） |
+| `real-pandas-series-extension-dtype-check` | 3（2/3） | **1（3/3）** | 1（2/3） |
+| `real-pandas-timedeltaarray-freq-no-validation` | 2（2/3） | 4（1/3） | 8（1/3） |
+| `real-requests-timedcache-keyerror` | 6（1/3） | 8（1/3） | 8（0/3） |
+| **合计** | **10/24** | **13/24** | **9/24** |
+
+- Δ 中位：always 3.5 / signature 3.5 / off 4.0；平均 finding 数：17.4 / 17.4 / 17.6。
+- 三臂**在准确率上分不开**：单条 3 轮波动能到 0→26（`real-django-psycopg3-tzloader` 在 signature 臂是 4、4、26），8 条 × 3 轮的样本撑不起"哪个更准"的结论。signature 没有回退，也谈不上提升。
+
+**结构性差异在成本**——按用例逐条算注入的 prompt 字符数（8 条，`max_chars` 2400）：
+
+| 臂 | 注入的用例数 | 平均每次评审的跨文件上下文字符 |
+|---|---|---|
+| `always` | 7 / 8 | 2100 |
+| `signature` | 1 / 8（`pandas-timedelta`，正是加了 `freq` 参数的那条） | 300 |
+
+−86%，约合每次评审省 450 token，且**跨文件 6 条构造上仍全部注入 6/6**（纯签名改名/加参数/改装饰器都会命中），"点名调用方 0/6 → 6/6"的收益不受影响。
+
+**决定**：`always` 保持默认不动（这轮只是把开关做出来并量清楚）。下一步建议把默认切到 `signature`：零回退、成本降 86%、跨文件收益不变；但要先按 `strictness` 分层把语料扩到 20 条复核，再改默认值——那时改动只有一个字段（`ConfigContext.neighbors_trigger` 的 `default`）。
+
 ### 夜间门禁（nightly，2026-11-01）
 
 `bench.py --json-out` 把每条用例的候选命中写成 JSON（schema 见脚本 docstring）：
