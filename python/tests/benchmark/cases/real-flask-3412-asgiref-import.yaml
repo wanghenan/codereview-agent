@@ -1,0 +1,48 @@
+id: real-flask-3412-asgiref-import
+kind: positive
+origin: real-pr
+language: python
+repo: pallets/flask
+base_commit: 2062d984abd3364557a6dcbd3300cfe3e4ecf156
+pr: 3412
+pr_title: Add `async` support
+review_comment:
+  author: davidism
+  url: https://github.com/pallets/flask/pull/3412#discussion_r407085967
+  body: "To make asgiref optional, try to import it here, so the first time `run_async` is used it can\
+    \ fail if it's not installed.\r\n\r\n```python\r\ntry:\r\n    import asgiref\r\nexcept ImportError:\r\
+    \n    raise RuntimeError(\"Install asgiref in order to run async views.\")\r\n```"
+file: src/flask/helpers.py
+expect:
+  file: src/flask/helpers.py
+  line: 15
+  line_tolerance: 3
+  category: bug
+  severity: medium
+  summary: asgiref 在模块顶层导入，可选依赖变成 Flask 的硬依赖
+  why: 该 PR 把 asgiref 加进 install_requires，helpers.py 顶部又直接 from asgiref.sync import async_to_sync；不装 asgiref
+    的环境（vendored、--no-deps、下游自带依赖集）在 import flask 时就失败，而只有 run_async 用到它。
+tags:
+- real-pr
+- dependency
+- optional-import
+diff: "diff --git a/src/flask/helpers.py b/src/flask/helpers.py\n--- a/src/flask/helpers.py\n+++ b/src/flask/helpers.py\n\
+  @@ -7,10 +7,12 @@\n import sys\n import unicodedata\n from functools import update_wrapper\n+from functools\
+  \ import wraps\n from threading import RLock\n from time import time\n from zlib import adler32\n \n\
+  +from asgiref.sync import async_to_sync\n from jinja2 import FileSystemLoader\n from werkzeug.datastructures\
+  \ import Headers\n from werkzeug.exceptions import BadRequest\n@@ -1122,3 +1124,39 @@ def is_ip(value):\n\
+  \             return True\n \n     return False\n+\n+\n+def run_async(func):\n+    \"\"\"Return a sync\
+  \ function that will run the coroutine function *func*.\"\"\"\n+\n+    @wraps(func)\n+    def outer(*args,\
+  \ **kwargs):\n+        \"\"\"This function grabs the current context for the inner function.\n+\n+ \
+  \       This is similar to the copy_current_xxx_context functions in the\n+        ctx module, except\
+  \ it has an async inner.\n+        \"\"\"\n+        ctx = None\n+        if _request_ctx_stack.top is\
+  \ not None:\n+            ctx = _request_ctx_stack.top.copy()\n+        elif _app_ctx_stack.top is not\
+  \ None:\n+            ctx = _app_ctx_stack.top.copy()\n+\n+        @wraps(func)\n+        async def\
+  \ inner(*a, **k):\n+            \"\"\"This restores the context before awaiting the func.\n+\n+    \
+  \        This is required as the func must be awaited within the\n+            context. Simply calling\
+  \ func (as per the\n+            copy_current_xxx_context functions) doesn't work as the\n+        \
+  \    with block will close before the coroutine is awaited.\n+            \"\"\"\n+            if ctx\
+  \ is not None:\n+                with ctx:\n+                    return await func(*a, **k)\n+     \
+  \       else:\n+                return await func(*a, **k)\n+\n+        return async_to_sync(inner)(*args,\
+  \ **kwargs)\n+\n+    return outer\n"
+strictness: defect

@@ -1,0 +1,48 @@
+id: real-django-9622-cot-precision
+kind: positive
+origin: real-pr
+language: python
+repo: django/django
+base_commit: 48aeca44d885929106e71fe78379fe50850af001
+pr: 9622
+pr_title: 'Refs #28643 -- Added math database functions.'
+review_comment:
+  author: wkschwartz
+  url: https://github.com/django/django/pull/9622#discussion_r184281246
+  body: I haven’t verified this myself, but [this SO answer](https://stackoverflow.com/a/3738696/1286628)
+    says it’s better to use cos/sin than 1/tan. Intuitively I understand it near pi/2 but I would expect
+    the opposite to be true close to zero. Not sure if there’s a one best option here. Just wanted to
+    raise this in case anyone had opinions.
+file: django/db/backends/sqlite3/base.py
+expect:
+  file: django/db/backends/sqlite3/base.py
+  line: 185
+  line_tolerance: 3
+  category: bug
+  severity: low
+  summary: COT 用 1/tan 实现，在 pi/2 附近精度差且极端输入会溢出
+  why: 'COT 注册为 lambda x: 1 / math.tan(x)；tan 在 π/2 附近数值很大，倒数会丢精度并可能得到 inf/0，而 cos/sin 形式在整个定义域更稳定。'
+tags:
+- real-pr
+- sqlite
+- math
+- precision
+diff: "diff --git a/django/db/backends/sqlite3/base.py b/django/db/backends/sqlite3/base.py\nindex 7951143fd097..20905c83b85f\
+  \ 100644\n--- a/django/db/backends/sqlite3/base.py\n+++ b/django/db/backends/sqlite3/base.py\n@@ -173,10\
+  \ +173,28 @@ def get_new_connection(self, conn_params):\n         conn.create_function(\"django_timestamp_diff\"\
+  , 2, _sqlite_timestamp_diff)\n         conn.create_function(\"regexp\", 2, _sqlite_regexp)\n       \
+  \  conn.create_function(\"django_format_dtdelta\", 3, _sqlite_format_dtdelta)\n-        conn.create_function(\"\
+  django_power\", 2, _sqlite_power)\n         conn.create_function('LPAD', 3, _sqlite_lpad)\n        \
+  \ conn.create_function('REPEAT', 2, operator.mul)\n         conn.create_function('RPAD', 3, _sqlite_rpad)\n\
+  +        conn.create_function('ACOS', 1, math.acos)\n+        conn.create_function('ASIN', 1, math.asin)\n\
+  +        conn.create_function('ATAN', 1, math.atan)\n+        conn.create_function('ATAN2', 2, math.atan2)\n\
+  +        conn.create_function('CEILING', 1, math.ceil)\n+        conn.create_function('COS', 1, math.cos)\n\
+  +        conn.create_function('COT', 1, lambda x: 1 / math.tan(x))\n+        conn.create_function('DEGREES',\
+  \ 1, math.degrees)\n+        conn.create_function('EXP', 1, math.exp)\n+        conn.create_function('FLOOR',\
+  \ 1, math.floor)\n+        conn.create_function('LN', 1, math.log)\n+        conn.create_function('LOG',\
+  \ 2, lambda x, y: math.log(y, x))\n+        conn.create_function('MOD', 2, math.fmod)\n+        conn.create_function('PI',\
+  \ 0, lambda: math.pi)\n+        conn.create_function('POWER', 2, operator.pow)\n+        conn.create_function('RADIANS',\
+  \ 1, math.radians)\n+        conn.create_function('SIN', 1, math.sin)\n+        conn.create_function('SQRT',\
+  \ 1, math.sqrt)\n+        conn.create_function('TAN', 1, math.tan)\n         conn.execute('PRAGMA foreign_keys\
+  \ = ON')\n         return conn\n \n"
+strictness: defect

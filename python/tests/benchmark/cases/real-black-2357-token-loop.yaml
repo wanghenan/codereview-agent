@@ -1,0 +1,309 @@
+id: real-black-2357-token-loop
+kind: positive
+origin: real-pr
+language: python
+repo: psf/black
+base_commit: 4dd100bff283b3c60ce67491dd53f47b45f68ac2
+pr: 2357
+pr_title: Jupyter notebook support
+review_comment:
+  author: JelleZijlstra
+  url: https://github.com/psf/black/pull/2357#discussion_r667261865
+  body: Can you make this throw an exception after say 100 iterations? Just so we don't go into an infinite
+    loop if token_hex is badly broken.
+file: src/black/handle_ipynb_magics.py
+expect:
+  file: src/black/handle_ipynb_magics.py
+  line: 135
+  line_tolerance: 3
+  category: bug
+  severity: low
+  summary: get_token 的 while 循环没有迭代上限，token 持续碰撞时会永久挂起
+  why: token = secrets.token_hex(nbytes) 后 while token in src 重新生成；若 token_hex 行为异常，或 magic 太短导致碰撞概率高，循环无法退出，Black
+    处理 notebook 时卡死。
+tags:
+- real-pr
+- loop
+- hang
+diff: 'diff --git a/src/black/handle_ipynb_magics.py b/src/black/handle_ipynb_magics.py
+
+  new file mode 100644
+
+  --- /dev/null
+
+  +++ b/src/black/handle_ipynb_magics.py
+
+  @@ -0,0 +1,135 @@
+
+  +"""Functions to process IPython magics with."""
+
+  +import ast
+
+  +import tokenize
+
+  +import io
+
+  +from typing import Dict
+
+  +
+
+  +import secrets
+
+  +from typing import NamedTuple, List, Tuple
+
+  +import collections
+
+  +
+
+  +from typing import Optional
+
+  +
+
+  +
+
+  +class Replacement(NamedTuple):
+
+  +    mask: str
+
+  +    src: str
+
+  +
+
+  +
+
+  +class UnsupportedMagic(UserWarning):
+
+  +    """Raise when Magic is not supported (e.g. `a = b??`)"""
+
+  +
+
+  +
+
+  +def remove_trailing_semicolon(src: str) -> Tuple[str, bool]:
+
+  +    """Remove trailing semicolon from Jupyter notebook cell.
+
+  +
+
+  +    For example,
+
+  +
+
+  +        fig, ax = plt.subplots()
+
+  +        ax.plot(x_data, y_data);  # plot data
+
+  +
+
+  +    would become
+
+  +
+
+  +        fig, ax = plt.subplots()
+
+  +        ax.plot(x_data, y_data)  # plot data
+
+  +
+
+  +    Mirrors the logic in `quiet` from `IPython.core.displayhook`.
+
+  +    """
+
+  +    tokens = list(tokenize.generate_tokens(io.StringIO(src).readline))
+
+  +    trailing_semicolon = False
+
+  +    for idx, token in enumerate(reversed(tokens), start=1):
+
+  +        if token[0] in (
+
+  +            tokenize.ENDMARKER,
+
+  +            tokenize.NL,
+
+  +            tokenize.NEWLINE,
+
+  +            tokenize.COMMENT,
+
+  +        ):
+
+  +            continue
+
+  +        if token[0] == tokenize.OP and token[1] == ";":
+
+  +            # We''re iterating backwards, so `-idx`.
+
+  +            del tokens[-idx]
+
+  +            trailing_semicolon = True
+
+  +        break
+
+  +    if not trailing_semicolon:
+
+  +        return src, False
+
+  +    return tokenize.untokenize(tokens), True
+
+  +
+
+  +
+
+  +def put_trailing_semicolon_back(src: str, has_trailing_semicolon: bool) -> str:
+
+  +    """Put trailing semicolon back if cell originally had it.
+
+  +
+
+  +    Mirrors the logic in `quiet` from `IPython.core.displayhook`.
+
+  +    """
+
+  +    if not has_trailing_semicolon:
+
+  +        return src
+
+  +    tokens = list(tokenize.generate_tokens(io.StringIO(src).readline))
+
+  +    for idx, token in enumerate(reversed(tokens), start=1):
+
+  +        if token[0] in (
+
+  +            tokenize.ENDMARKER,
+
+  +            tokenize.NL,
+
+  +            tokenize.NEWLINE,
+
+  +            tokenize.COMMENT,
+
+  +        ):
+
+  +            continue
+
+  +        # We''re iterating backwards, so `-idx`.
+
+  +        tokens[-idx] = token._replace(string=token.string + ";")
+
+  +        break
+
+  +    else:  # pragma: nocover
+
+  +        raise AssertionError("Unreachable code")
+
+  +    return str(tokenize.untokenize(tokens))
+
+  +
+
+  +
+
+  +def mask_cell(src: str) -> Tuple[str, List[Replacement]]:
+
+  +    """Mask IPython magics so content becomes parseable Python code.
+
+  +
+
+  +    For example,
+
+  +
+
+  +        %matplotlib inline
+
+  +        ''foo''
+
+  +
+
+  +    becomes
+
+  +
+
+  +        "25716f358c32750e"
+
+  +        ''foo''
+
+  +
+
+  +    The replacements are returned, along with the transformed code.
+
+  +    """
+
+  +    replacements: List[Replacement] = []
+
+  +    try:
+
+  +        ast.parse(src)
+
+  +    except SyntaxError:
+
+  +        # Might have IPython magics, will process below.
+
+  +        pass
+
+  +    else:
+
+  +        # Syntax is fine, nothing to mask, early return.
+
+  +        return src, replacements
+
+  +
+
+  +    from IPython.core.inputtransformer2 import TransformerManager
+
+  +
+
+  +    transformer_manager = TransformerManager()
+
+  +    transformed = transformer_manager.transform_cell(src)
+
+  +    transformed, cell_magic_replacements = replace_cell_magics(transformed)
+
+  +    replacements += cell_magic_replacements
+
+  +    transformed = transformer_manager.transform_cell(transformed)
+
+  +    try:
+
+  +        transformed, magic_replacements = replace_magics(transformed)
+
+  +    except UnsupportedMagic:
+
+  +        raise SyntaxError
+
+  +    if len(transformed.splitlines()) != len(src.splitlines()):  # multi-line magic
+
+  +        raise SyntaxError
+
+  +    replacements += magic_replacements
+
+  +    return transformed, replacements
+
+  +
+
+  +
+
+  +def get_token(src: str, magic: str) -> str:
+
+  +    """Return randomly generated token to mask IPython magic with.
+
+  +
+
+  +    For example, if ''magic'' was `%matplotlib inline`, then a possible
+
+  +    token to mask it with would be `"43fdd17f7e5ddc83"`. The token
+
+  +    will be the same length as the magic, and we make sure that it was
+
+  +    not already present anywhere else in the cell.
+
+  +    """
+
+  +    assert magic
+
+  +    nbytes = max(len(magic) // 2 - 1, 1)
+
+  +    token = secrets.token_hex(nbytes)
+
+  +    while token in src:  # pragma: nocover
+
+  '
+strictness: defect

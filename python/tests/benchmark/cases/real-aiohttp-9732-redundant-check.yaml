@@ -1,0 +1,155 @@
+id: real-aiohttp-9732-redundant-check
+kind: positive
+origin: real-pr
+language: python
+repo: aio-libs/aiohttp
+base_commit: e5d1240babff6db6297e0d92f174446de19cf76d
+pr: 9732
+pr_title: Add Client Middleware Support
+review_comment:
+  author: Dreamsorcerer
+  url: https://github.com/aio-libs/aiohttp/pull/9732#discussion_r2096323156
+  body: I think this check is actually irrelevant, unless we allow None. If there's no middlewares then
+    the for loop below will not iterate and it'll immediately return the handler anyway (I guess there'd
+    be a `reversed(())` call overhead though).
+file: aiohttp/client_middlewares.py
+expect:
+  file: aiohttp/client_middlewares.py
+  line: 31
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: apply_middlewares 的 if not middlewares 分支多余，空序列循环会直接返回 handler
+  why: middlewares 为空时下面的 for 循环不执行，结果与提前 return handler 相同；这个分支只多一次判空，注释里也承认了它的唯一作用是省掉 reversed(()) 的开销。
+tags:
+- real-pr
+- api
+- simplify
+diff: 'diff --git a/aiohttp/client_middlewares.py b/aiohttp/client_middlewares.py
+
+  new file mode 100644
+
+  --- /dev/null
+
+  +++ b/aiohttp/client_middlewares.py
+
+  @@ -0,0 +1,58 @@
+
+  +"""Client middleware support."""
+
+  +
+
+  +from collections.abc import Awaitable, Callable
+
+  +
+
+  +from .client_reqrep import ClientRequest, ClientResponse
+
+  +
+
+  +__all__ = ("ClientMiddlewareType", "ClientHandlerType", "build_client_middlewares")
+
+  +
+
+  +# Type alias for client request handlers - functions that process requests and return responses
+
+  +ClientHandlerType = Callable[[ClientRequest], Awaitable[ClientResponse]]
+
+  +
+
+  +# Type for client middleware - similar to server but uses ClientRequest/ClientResponse
+
+  +ClientMiddlewareType = Callable[
+
+  +    [ClientRequest, ClientHandlerType], Awaitable[ClientResponse]
+
+  +]
+
+  +
+
+  +
+
+  +def build_client_middlewares(
+
+  +    handler: ClientHandlerType,
+
+  +    middlewares: tuple[ClientMiddlewareType, ...],
+
+  +) -> ClientHandlerType:
+
+  +    """
+
+  +    Apply middlewares to request handler.
+
+  +
+
+  +    The middlewares are applied in reverse order, so the first middleware
+
+  +    in the list wraps all subsequent middlewares and the handler.
+
+  +
+
+  +    This implementation avoids using partial/update_wrapper to minimize overhead
+
+  +    and doesn''t cache to avoid holding references to stateful middleware.
+
+  +    """
+
+  +    if not middlewares:
+
+  +        return handler
+
+  +
+
+  +    # Optimize for single middleware case
+
+  +    if len(middlewares) == 1:
+
+  +        middleware = middlewares[0]
+
+  +
+
+  +        async def single_middleware_handler(req: ClientRequest) -> ClientResponse:
+
+  +            return await middleware(req, handler)
+
+  +
+
+  +        return single_middleware_handler
+
+  +
+
+  +    # Build the chain for multiple middlewares
+
+  +    current_handler = handler
+
+  +
+
+  +    for middleware in reversed(middlewares):
+
+  +        # Create a new closure that captures the current state
+
+  +        def make_wrapper(
+
+  +            mw: ClientMiddlewareType, next_h: ClientHandlerType
+
+  +        ) -> ClientHandlerType:
+
+  +            async def wrapped(req: ClientRequest) -> ClientResponse:
+
+  +                return await mw(req, next_h)
+
+  +
+
+  +            return wrapped
+
+  +
+
+  +        current_handler = make_wrapper(middleware, current_handler)
+
+  +
+
+  +    return current_handler
+
+  '
+strictness: nit
