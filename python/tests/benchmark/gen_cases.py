@@ -417,8 +417,8 @@ RECIPES: list[dict] = [
     {
         "id": "xfile-inline-build-renamed",
         "file": "python/src/codereview/output/inline.py",
-        "find": "    def build(self, review_result: ReviewResult) -> dict[str, Any]:",
-        "replace": "    def render(self, review_result: ReviewResult) -> dict[str, Any]:",
+        "find": "    def build(\n        self, review_result: ReviewResult, notes: Optional[list[str]] = None\n    ) -> dict[str, Any]:",
+        "replace": "    def render(\n        self, review_result: ReviewResult, notes: Optional[list[str]] = None\n    ) -> dict[str, Any]:",
         "category": "bug",
         "severity": "high",
         "summary": "InlineCommentBuilder.build 被改名，调用方仍调用 .build()",
