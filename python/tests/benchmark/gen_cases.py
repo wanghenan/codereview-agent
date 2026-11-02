@@ -560,12 +560,45 @@ def _check_applies(case: dict) -> str | None:
     return None if proc.returncode == 0 else proc.stderr.strip()
 
 
-def main(argv: list[str] | None = None) -> int:
+def _prune_stale(out_dir: Path, wanted: set[str]) -> None:
+    """Drop generated cases whose recipe disappeared.
+
+    ``cases/`` also holds hand-curated real-PR cases that do not come from
+    ``RECIPES``; only files declaring ``origin: injected`` are safe to remove.
+    A file whose origin cannot be read is kept rather than deleted.
+    """
+    for stale in out_dir.glob("*.yaml"):
+        if stale.name in wanted:
+            continue
+        try:
+            case = yaml.safe_load(stale.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        if not isinstance(case, dict) or case.get("origin") != "injected":
+            continue
+        stale.unlink()
+        print(f"removed stale case {stale.name}")
+
+
+def _is_stale(case: dict, out_dir: Path) -> bool:
+    """Return True when the committed YAML differs from the generated case."""
+    path = out_dir / f"{case['id']}.yaml"
+    if not path.exists():
+        return True
+    try:
+        committed = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return True
+    return committed != case
+
+
+def main(argv: list[str] | None = None, cases_dir: Path | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", action="store_true", help="write YAML files into cases/")
     parser.add_argument("--check", action="store_true", help="only validate recipes")
     args = parser.parse_args(argv)
 
+    out_dir = cases_dir if cases_dir is not None else BENCH_DIR / "cases"
     cases, failures = [], 0
     for recipe in RECIPES:
         try:
@@ -582,22 +615,29 @@ def main(argv: list[str] | None = None) -> int:
         cases.append(case)
         print(f"OK   {case['id']} (+{case['diff'].count(chr(10) + '+')} lines)")
 
-    print(f"\n{len(cases)} ok / {failures} failed")
     if args.write and not failures:
-        out_dir = BENCH_DIR / "cases"
         out_dir.mkdir(parents=True, exist_ok=True)
-        # Drop cases whose recipe disappeared, so the directory matches RECIPES.
-        wanted = {f"{case['id']}.yaml" for case in cases}
-        for stale in out_dir.glob("*.yaml"):
-            if stale.name not in wanted:
-                stale.unlink()
-                print(f"removed stale case {stale.name}")
+        _prune_stale(out_dir, {f"{case['id']}.yaml" for case in cases})
         for case in cases:
             (out_dir / f"{case['id']}.yaml").write_text(
                 yaml.safe_dump(case, allow_unicode=True, sort_keys=False),
                 encoding="utf-8",
             )
-        print(f"wrote {len(cases)} cases to {out_dir.relative_to(REPO_ROOT)}")
+        try:
+            shown = out_dir.relative_to(REPO_ROOT)
+        except ValueError:
+            shown = out_dir
+        print(f"wrote {len(cases)} cases to {shown}")
+
+    stale = 0
+    if args.check:
+        for case in cases:
+            if _is_stale(case, out_dir):
+                print(f"FAIL {case['id']}: committed case is stale (run --write)")
+                stale += 1
+        failures += stale
+
+    print(f"\n{len(cases) - stale} ok / {failures} failed")
     return 1 if failures else 0
 
 

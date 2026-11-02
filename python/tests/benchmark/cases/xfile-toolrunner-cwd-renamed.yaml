@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/core/tool_runner.py
 expect:
   file: python/src/codereview/core/tool_runner.py
-  line: 393
+  line: 422
   line_tolerance: 5
   category: bug
   severity: high
@@ -17,7 +17,7 @@ tags:
 - rename
 diff: "diff --git a/python/src/codereview/core/tool_runner.py b/python/src/codereview/core/tool_runner.py\n\
   --- a/python/src/codereview/core/tool_runner.py\n+++ b/python/src/codereview/core/tool_runner.py\n\
-  @@ -390,7 +390,7 @@\n             selected.append(spec)\n         return selected\n\
+  @@ -419,7 +419,7 @@\n             selected.append(spec)\n         return selected\n\
   \ \n-    def run(self, paths: Iterable[PathLike], cwd: PathLike) -> list[Finding]:\n\
   +    def run(self, paths: Iterable[PathLike], workdir: PathLike) -> list[Finding]:\n\
   \         \"\"\"Run every applicable available tool and return normalised findings.\n\
