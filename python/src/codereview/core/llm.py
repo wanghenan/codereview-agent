@@ -61,6 +61,15 @@ class LLMFactory:
             raise ValueError(f"Unsupported provider: {config.provider}")
 
     @classmethod
+    def _default_headers(cls, config: ConfigLLM) -> dict[str, dict[str, str]]:
+        """Return ``default_headers`` kwargs when extra headers are configured.
+
+        Empty headers are omitted entirely so the LangChain client keeps its
+        existing constructor arguments.
+        """
+        return {"default_headers": dict(config.headers)} if config.headers else {}
+
+    @classmethod
     def _create_openai(cls, config: ConfigLLM, model: str) -> ChatOpenAI:
         """Create OpenAI LLM."""
         return ChatOpenAI(
@@ -68,6 +77,7 @@ class LLMFactory:
             api_key=config.api_key,
             base_url=config.base_url or None,
             temperature=config.temperature,
+            **cls._default_headers(config),
         )
 
     @classmethod
@@ -78,6 +88,7 @@ class LLMFactory:
             anthropic_api_key=config.api_key,
             base_url=config.base_url or "https://api.anthropic.com",
             temperature=config.temperature,
+            **cls._default_headers(config),
         )
 
     @classmethod
@@ -97,6 +108,7 @@ class LLMFactory:
             api_key=config.api_key,
             base_url=base_url,
             temperature=config.temperature,
+            **cls._default_headers(config),
         )
 
     @classmethod

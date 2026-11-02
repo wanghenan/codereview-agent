@@ -204,6 +204,10 @@ class ConfigLLM(BaseModel):
     base_url: Optional[str] = None
     temperature: float = 0.7
     fallback_providers: list[LLMProvider] = Field(default_factory=list)
+    headers: dict[str, str] = Field(
+        default_factory=dict,
+        description="Extra HTTP headers for every LLM request",
+    )
 
 
 class ConfigCache(BaseModel):
