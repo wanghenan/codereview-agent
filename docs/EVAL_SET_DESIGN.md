@@ -424,7 +424,7 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 9 条 d
 
 ```json
 {"generated_at": "...", "config": "...", "cases": [
-  {"id": "...", "origin": "real-pr", "kind": "positive", "findings": 17,
+  {"id": "...", "origin": "real-pr", "kind": "positive", "strictness": "defect", "findings": 17,
    "matched": true, "best_delta": 2, "elapsed": 15.2, "error": null}]}
 ```
 

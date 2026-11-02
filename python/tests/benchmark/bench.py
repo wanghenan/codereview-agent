@@ -215,14 +215,15 @@ def render(
         "",
         f"cases: {len(results)} · repo: `{REPO_ROOT.name}` · config: `{config_path.name}`",
         "",
-        "| case | origin | kind | findings | candidate | elapsed | verdict |",
-        "|---|---|---|---|---|---|---|",
+        "| case | origin | kind | strictness | findings | candidate | elapsed | verdict |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for item in results:
         case = item["case"]
         verdict = "☐ hit ☐ partial ☐ miss" if case["kind"] == "positive" else "☐ tn ☐ fp (noise)"
         lines.append(
             f"| `{case['id']}` | {case.get('origin', 'injected')} | {case['kind']} | "
+            f"{case.get('strictness') or '—'} | "
             f"{len(item['findings'])} | {_candidate_cell(item)} | "
             f"{item['elapsed']:.1f}s | {verdict} |"
         )
@@ -296,7 +297,8 @@ def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> P
 
     ``matched``/``best_delta`` come from :func:`candidate_hit`: same file and a
     line within tolerance. This is a regression signal only, never proof of a
-    semantic hit.
+    semantic hit. ``strictness`` is copied from the case YAML (``null`` when the
+    case does not declare one) so stratified reports need not re-read the YAML.
     """
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -306,6 +308,7 @@ def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> P
                 "id": item["case"]["id"],
                 "origin": item["case"].get("origin", "injected"),
                 "kind": item["case"]["kind"],
+                "strictness": item["case"].get("strictness"),
                 "findings": len(item["findings"]),
                 "matched": bool(item["matched"]),
                 "best_delta": item["best_delta"],
