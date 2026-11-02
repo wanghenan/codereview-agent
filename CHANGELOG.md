@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `llm.headers` config to send extra HTTP headers on every LLM request (e.g. `x-opencode-session` for opencode-go gateways).
 - `llm.maxTokens` config to cap (or raise) output tokens per request; unset keeps the client default.
 ### Changed
+- Review prompts now show each diff line's new-file line number (`core/diff_numbering.py`): context lines render as `  121 | ...`, added lines as `+ 123 | ...` and deleted lines keep a blank number field. `{patch}` carries the numbered diff while cache keys, dedupe fingerprints and inline-comment positioning still use the raw patch; the prompt requires `line_number` to be one of the displayed numbers, so findings anchor on the failing line instead of the hunk header.
 - `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 
 ### Changed

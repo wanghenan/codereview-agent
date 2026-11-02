@@ -319,7 +319,9 @@ customPromptPath: ./prompts/review-prompt.txt
 | `{status}` | 文件状态（added/modified/deleted） |
 | `{additions}` | 新增行数 |
 | `{deletions}` | 删除行数 |
-| `{patch}` | 代码差异内容 |
+| `{patch}` | 代码差异内容（每行带新文件行号，如 `+ 123`） |
+
+> **行号说明**：`{patch}` 中每个 hunk 内的行首数字是该行在**新文件**中的行号：新增行为 `+ 123 | ...`，上下文行为 `  121 | ...`，删除行没有新文件行号（`-     | ...`）。自定义 prompt 若要求模型输出 `line_number`，请要求它必须取这些行号之一。缓存 key、去重指纹与行内评论定位仍使用原始 diff。
 
 ### 示例
 

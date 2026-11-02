@@ -19,6 +19,7 @@ from langgraph.graph import END, StateGraph
 from tqdm import tqdm
 
 from codereview.core.diff_filter import FilterConfig, filter_entries
+from codereview.core.diff_numbering import number_patch
 from codereview.core.finding_filter import FilterRules, filter_findings
 
 # Re-exported for tests that exercise the object-scanning helper directly.
@@ -157,9 +158,8 @@ and identify potential issues.
 File: {filename}
 Status: {status}
 Changes: +{additions} -{deletions}
-Diff:
+Diff (the number at the start of each line is its line number in the new file):
 {patch}
-
 ## Your Task
 Analyze this code change and provide a risk assessment in JSON format:
 {{
@@ -186,7 +186,7 @@ Guidelines:
 - LOW risk: Style issues, minor improvements
 - risk_level must be exactly "high", "medium", or "low"
 - issues must always be a list (empty [] if no issues)
-- Be strict but fair. Focus on real issues, not style preferences.
+- Be strict but fair. Focus on real issues, not style preferences. line_number must be one of the new-file numbers shown at the start of a context or added line, never a hunk header offset; for a finding about a removed line, use the line that replaces it or the nearest context line.
 - category is one of bug / security / perf / maintainability / style
 - confidence is a number between 0 and 1 (how sure you are the issue is real)
 - evidence lists concrete anchors (symbol names, line numbers, rule ids); an
@@ -801,7 +801,6 @@ class ReviewAgent:
                         "status": entry.status,
                         "additions": entry.additions,
                         "deletions": entry.deletions,
-                        "patch": entry.patch or "No diff available",
                     }
                 ),
                 timeout=self.timeout_seconds,
@@ -918,7 +917,7 @@ class ReviewAgent:
         - {status}: File status (added/modified/deleted)
         - {additions}: Number of lines added
         - {deletions}: Number of lines deleted
-        - {patch}: The actual diff patch
+        - {patch}: The diff patch annotated with new-file line numbers
         """
         prompt_template = REVIEW_SYSTEM_PROMPT
 
@@ -934,9 +933,10 @@ class ReviewAgent:
                         f"Failed to load custom prompt {custom_path}: {e}, using default"
                     )
 
+        numbered_patch = number_patch(entry.patch) if entry.patch else "No diff available"
         return ChatPromptTemplate.from_messages(
             [("system", prompt_template), ("user", """Review this code change.""")]
-        ).partial(cross_file_context="")
+        ).partial(cross_file_context="", patch=numbered_patch)
 
     def _is_critical_path(self, filename: str) -> bool:
         """Check if file is in a critical path."""
