@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- LLM JSON parsing accepts provider content-block replies: Anthropic-compatible gateways answer with a list of `thinking` + `text` blocks, which `JsonOutputParser` could not read (empty "Invalid json output"). `core/llm_output.py` now takes the text blocks, strips fences and prose, and the reviewer, project analyzer and fixer all use it.
+
 ### Added
 - `LICENSE` (MIT) file and `[project.license]` metadata in `pyproject.toml` (previously declared but missing).
 - Automated release workflow (`.github/workflows/release.yml`): tag-triggered, runs a self-contained quality gate (ruff + pytest), builds wheel/sdist, and publishes a GitHub Release with notes extracted from CHANGELOG.md. Pre-release tags (e.g. `v1.2.0-rc1`) are auto-marked as prerelease.
@@ -23,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `S0` evaluation benchmark (`tests/benchmark/`): 24 injected defect cases plus 6 negative cases, a generator pinned to `HEAD` and a runner producing side-by-side reports.
 - Symbol index (`core/symbol_index.py`, stdlib `ast`, no new dependencies) and bounded cross-file context injection into review prompts (3 neighbours / 2400 chars by default).
 - `llm.headers` config to send extra HTTP headers on every LLM request (e.g. `x-opencode-session` for opencode-go gateways).
+- `llm.maxTokens` config to cap (or raise) output tokens per request; unset keeps the client default.
 ### Changed
 - `requires-python` raised from `>=3.9` to `>=3.10` to match reality: the source uses PEP 604 unions (`X | None`) at runtime, which requires Python 3.10+. The CI matrix drops 3.9 accordingly. (3.9 compatibility is a separate follow-up: converting unions to `Optional[X]`.)
 

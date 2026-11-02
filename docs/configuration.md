@@ -15,6 +15,7 @@ llm:
   baseUrl: ""               # 自定义 API 地址 (可选)
   headers: {}               # 额外请求头 (可选，见下文)
   temperature: 0.7          # 采样温度 (0.0-2.0，默认 0.7)
+  maxTokens: 8192           # 单次输出 token 上限 (可选，见下文)
   fallback_providers:       # LLM fallback 链
     - provider: anthropic
       apiKey: ${ANTHROPIC_API_KEY}
@@ -134,6 +135,21 @@ llm:
   headers:
     x-opencode-session: 00000000-0000-4000-8000-000000000000
 ```
+
+
+### maxTokens
+
+单次请求的输出 token 上限。不配置时沿用客户端默认值（Anthropic 客户端是 1024），配置后透传给该 provider 的客户端。
+
+推理模型（例如网关后面的 `deepseek-v4.1-flash`）会先输出 `thinking` 块再输出正文，默认预算常常被思考吃光、正文为空。这类模型建议显式调大，并把 `timeout_seconds` 一起调大：
+
+```yaml
+llm:
+  maxTokens: 16000
+timeout_seconds: 300
+```
+
+解析层已经能处理"thinking + text 内容块列表"这种返回（见 `core/llm_output.py`）：只取 text 块、忽略 thinking，再去掉 markdown 围栏和外层散文后解析 JSON。
 
 ---
 

@@ -70,6 +70,16 @@ class LLMFactory:
         return {"default_headers": dict(config.headers)} if config.headers else {}
 
     @classmethod
+    def _limit_kwargs(cls, config: ConfigLLM) -> dict[str, int]:
+        """Return the ``max_tokens`` keyword only when the deployment sets one.
+
+        Reasoning models spend part of the budget on thinking blocks, so the
+        client default (1024 for Anthropic) can leave an empty answer; leaving
+        the key out keeps every existing configuration byte-identical.
+        """
+        return {"max_tokens": config.max_tokens} if config.max_tokens is not None else {}
+
+    @classmethod
     def _create_openai(cls, config: ConfigLLM, model: str) -> ChatOpenAI:
         """Create OpenAI LLM."""
         return ChatOpenAI(
@@ -78,6 +88,7 @@ class LLMFactory:
             base_url=config.base_url or None,
             temperature=config.temperature,
             **cls._default_headers(config),
+            **cls._limit_kwargs(config),
         )
 
     @classmethod
@@ -89,6 +100,7 @@ class LLMFactory:
             base_url=config.base_url or "https://api.anthropic.com",
             temperature=config.temperature,
             **cls._default_headers(config),
+            **cls._limit_kwargs(config),
         )
 
     @classmethod
@@ -109,6 +121,7 @@ class LLMFactory:
             base_url=base_url,
             temperature=config.temperature,
             **cls._default_headers(config),
+            **cls._limit_kwargs(config),
         )
 
     @classmethod

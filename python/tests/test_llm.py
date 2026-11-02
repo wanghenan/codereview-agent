@@ -152,6 +152,33 @@ class TestLLMFactory:
                     # but they shouldn't raise ValueError("Unsupported provider")
                     pass
 
+    def test_max_tokens_is_forwarded_when_set(self):
+        """A configured output limit reaches both client families."""
+        config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="test-key",
+            model="claude-sonnet-4-20250514",
+            temperature=0.3,
+            max_tokens=16000,
+        )
+        with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
+            LLMFactory.create(config)
+            mock_anthropic.assert_called_once_with(
+                model="claude-sonnet-4-20250514",
+                anthropic_api_key="test-key",
+                base_url="https://api.anthropic.com",
+                temperature=0.3,
+                max_tokens=16000,
+            )
+
+    def test_max_tokens_is_omitted_when_unset(self):
+        """The default keeps every constructor argument as it was before the option existed."""
+        config = ConfigLLM(provider=LLMProvider.DEEPSEEK, api_key="test-key", temperature=0.7)
+
+        with patch("codereview.core.llm.ChatOpenAI") as mock_openai:
+            LLMFactory.create(config)
+            assert "max_tokens" not in mock_openai.call_args.kwargs
+
     def test_get_default_model_openai(self):
         """Test get_default_model for OpenAI."""
         assert LLMFactory.get_default_model(LLMProvider.OPENAI) == "gpt-4o"
