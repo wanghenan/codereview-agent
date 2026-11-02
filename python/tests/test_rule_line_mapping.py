@@ -72,11 +72,11 @@ class TestDetectInDiffLineNumbers:
     def test_single_hunk_uses_real_file_line(self) -> None:
         diff = """--- a/app.py
 +++ b/app.py
-@@ -1,3 +1,6 @@
+@@ -1,3 +1,5 @@
  import sqlite3
 +uid = 1
 +cursor.execute(f"SELECT * FROM t WHERE id = {uid}")
- 
+ ctx4
  def f():
 """
         engine = create_rule_engine()
@@ -105,6 +105,21 @@ class TestDetectInDiffLineNumbers:
         issues = _sqli_issues(create_rule_engine().detect_in_diff(diff))
 
         assert [issue["line_number"] for issue in issues] == [8, 62]
+
+    def test_deletions_and_missing_newline_do_not_shift_lines(self) -> None:
+        diff = """--- a/app.py
++++ b/app.py
+@@ -1,3 +1,4 @@
+ ctx1
+-removed = 1
++uid = 1
++cursor.execute("SELECT 1")
+ ctx4
+\\ No newline at end of file
+"""
+        issues = _sqli_issues(create_rule_engine().detect_in_diff(diff))
+
+        assert [issue["line_number"] for issue in issues] == [3]
 
     def test_new_file_hunk_maps_from_line_one(self) -> None:
         diff = """diff --git a/new.py b/new.py
