@@ -11,6 +11,8 @@ from typing import Optional
 
 import yaml
 
+from .code_only import strip_comments_and_docstrings
+
 logger = logging.getLogger(__name__)
 
 # Unified diff hunk header, e.g. "@@ -12,7 +14,9 @@ def foo():".
@@ -165,12 +167,19 @@ class RuleEngine:
         """
         issues = []
 
+        # Rules only scan code: prose in comments and docstrings used to be
+        # matched as if it were executable (e.g. a docstring mentioning
+        # "executed").  The sanitised text keeps every newline and inline
+        # string literal, so match line numbers still point at the original
+        # line and SQL literals stay visible.
+        code = strip_comments_and_docstrings(content, language=language, file_path=file_path)
+
         for rule in self.rules:
             # Filter by language if specified
             if rule.language and language and rule.language.lower() != language.lower():
                 continue
 
-            matches = rule.match(content)
+            matches = rule.match(code)
             issues.extend(matches)
 
         return issues
