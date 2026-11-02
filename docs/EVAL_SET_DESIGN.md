@@ -362,6 +362,17 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 3. 自建规则层误报：SQL 注入规则把 docstring 里的 "executed" 当成 SQL（`if task_func_args[0] != "context"` 那条的实际原因是规则命中了附近的文档字符串），且 finding 行号取自拼接后的新增行下标而非新文件真实行号，行内评论会贴到错误位置。→ 收紧 `OWASP-A01-003` 至真实 SQL 调用点，`detect_in_diff()` 解析 hunk 头映射新文件行号（**已修**：#34 / PR #36）。规则层现在先剥离注释与 docstring 再匹配（保留行号与行内字符串），同类散文误报不必再逐条收紧正则。
 4. finding 锚在块首而非出错行：drf 那条最准的 finding 报在 343 行，人类评论在 352 行（Δ9）。行内评论会贴错位置，行号指标也把它判成 miss（**未修**）。
 
+   **2026-11-02 试过一版，没解决**：PR #53 给进 prompt 的 diff 每行加上了新文件行号（`  121 |`、`+ 123 |`），并要求 `line_number` 取这些数字。同配置（`always`、opencode-go、temperature 0.2）在两条已知偏位的用例上各跑 3 轮：
+
+   | 用例 | 改前 Δ | 改后 Δ |
+   |---|---|---|
+   | `real-drf-datetime-local-none-format` | 无 finding / 4 / 9 | 6 / 9 / 无 finding |
+   | `real-matplotlib-hist-colors-sequence` | 2 / 无 finding / 3 | 2 / 无 finding / 1 |
+
+   没有可测改善，而且"模型完全不在该文件报 finding"的情况两轮实验都出现过——这说明还叠着**覆盖问题**，不只是锚点偏移。行号标注作为 prompt 增强保留，但本条继续标未修。
+
+   下一个候选是**入口校验**：`line_number` 落在 hunk 首行、或不在该 hunk 的新增行集合里时，用 finding 文本里的代码片段在该 patch 内做唯一定位并改写锚点；需要先量误改率再合。
+
 #### 切片基准：最终 diff ≠ 评论时 diff（2026-11-02）
 
 上一轮把 43 条草稿对照 **PR 最终 diff** 逐条核，结论是 0 条可晋升；这不是语料差，是尺子切错了地方。真人评论锚在**某个中间提交**上，PR 最终 diff 是另一棵树：
