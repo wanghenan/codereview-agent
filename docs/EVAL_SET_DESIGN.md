@@ -449,7 +449,28 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 
 −86%，约合每次评审省 450 token，且**跨文件 6 条构造上仍全部注入 6/6**（纯签名改名/加参数/改装饰器都会命中），"点名调用方 0/6 → 6/6"的收益不受影响。
 
-**决定**：`always` 保持默认不动（这轮只是把开关做出来并量清楚）。下一步建议把默认切到 `signature`：零回退、成本降 86%、跨文件收益不变；但要先按 `strictness` 分层把语料扩到 20 条复核，再改默认值——那时改动只有一个字段（`ConfigContext.neighbors_trigger` 的 `default`）。
+**决定（2026-11-02 修订）**：`always` 保持默认不动。补做的 defect 层两臂复核（见下）没有显示 `signature` 更准，因此**不支持为了准确率切换默认值**；成本收益（注入 6/9 → 1/9）仍然成立，但那是产品取舍，等 3 轮 × 20 条全量复核后再定。
+
+#### defect 层两臂复核（2 轮 × 9 条，2026-11-02）
+
+语料扩到 20 条后，先用 `strictness: defect` 的 9 条做定向复核（`opencode-go` 的 `deepseek-v4.1-flash`，`maxTokens=16000`、`timeout_seconds=300`，`temperature=0.2`）。9 条里 `signature` 只在 `real-django-9622-cot-precision` 一条上注入，其余 8 条等价于关闭注入。
+
+| 用例 | `always` Δ（两轮） | `signature` Δ（两轮） |
+|---|---|---|
+| `real-black-2357-token-loop` | 1 / 2 | 11 / 6 |
+| `real-black-3219-invalid-specifier` | 1 / 11 | 0 / 1 |
+| `real-django-9622-cot-precision` | 0 / 0 | 4 / 0 |
+| `real-django-migrate-install-error-swallowed` | 24 / 24 | 24 / — |
+| `real-django-psycopg3-tzloader` | 8 / — | 9 / 8 |
+| `real-drf-datetime-local-none-format` | 4 / 4 | — / 4 |
+| `real-flask-3412-asgiref-import` | 0 / 0 | 0 / 100 |
+| `real-matplotlib-hist-colors-sequence` | 4 / 10 | 4 / 2 |
+| `real-pandas-series-extension-dtype-check` | 0 / 1 | 1 / 3 |
+| **±3 命中** | **9/17** | **7/16** |
+
+`—` 是该次运行重试三次后仍未拿到 LLM 结果（两臂共 3 次），不计入命中分母。逐用例互有胜负，同一臂两次运行可以差 0 和 100 行——差异全部落在单次运行波动范围内，**分不出高下**。
+
+**结论**：`signature` 在 defect 层没有可测的准确率收益，也没有可测的损失；它省的是注入成本，不是判断力。
 
 ### 夜间门禁（nightly，2026-11-01）
 
@@ -460,6 +481,8 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
   {"id": "...", "origin": "real-pr", "kind": "positive", "strictness": "defect", "findings": 17,
    "matched": true, "best_delta": 2, "elapsed": 15.2, "error": null}]}
 ```
+
+**基线现状（2026-11-02）**：语料已扩到 20 条，但 `baseline.json` 里 `real_pr` 仍是 9 条（那次实测之后官方 DeepSeek 余额用尽，没法用同一模型重跑 20 条）。`gate.py` 在"报告用例数多于基线"时判失败，所以**夜间作业在基线刷新前会红**；仓库目前没配 `DEEPSEEK_API_KEY`，作业会跳过，因此不影响 CI。刷新方式：用 `deepseek-chat` 跑一次 20 条，把 `real_pr.matched` / `total` 改成实测值。
 
 `gate.py` 读取这份 JSON 与签入的 `baseline.json`，按 origin 比较正例的候选命中数；低于基线减 `--tolerance`（默认 0）即退出码 1，并打印未命中的用例名。用例数少于基线（或多于基线，说明基线该刷新）同样判失败。
 
