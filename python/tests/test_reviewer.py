@@ -370,6 +370,41 @@ class TestReviewAgent:
         assert "src/ok1.py" in paths
         assert "src/ok2.py" in paths
 
+    def test_build_prompt_numbers_diff_lines(self, config, project_context):
+        """The rendered prompt carries new-file line numbers, not a raw patch."""
+        agent = ReviewAgent(config, MagicMock(), project_context)
+        entry = DiffEntry(
+            filename="src/main.py",
+            status="modified",
+            additions=2,
+            deletions=1,
+            patch="@@ -1,2 +122,3 @@\n ctx\n-old\n+new\n+extra\n",
+        )
+        original_patch = entry.patch
+
+        prompt = agent._build_prompt(entry)
+        messages = prompt.format_messages(
+            project_context="ctx",
+            critical_paths="src/auth",
+            exclude_patterns="*.md",
+            static_results="- [HIGH] example",
+            filename=entry.filename,
+            status=entry.status,
+            additions=entry.additions,
+            deletions=entry.deletions,
+        )
+        content = messages[0].content
+
+        assert "+ 123 | new" in content
+        assert "+ 124 | extra" in content
+        # Template variables outside {patch} keep their usual values.
+        assert "src/main.py" in content
+        assert "modified" in content
+        assert "- [HIGH] example" in content
+        assert "{patch}" not in content
+        # The caller's diff entry is never rewritten.
+        assert entry.patch == original_patch
+
 
 class TestReviewOrchestrator:
     """Test ReviewOrchestrator class."""
