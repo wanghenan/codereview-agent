@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/output/inline.py
 expect:
   file: python/src/codereview/output/inline.py
-  line: 34
+  line: 35
   line_tolerance: 5
   category: bug
   severity: high
@@ -17,10 +17,9 @@ tags:
 - rename
 diff: "diff --git a/python/src/codereview/output/inline.py b/python/src/codereview/output/inline.py\n\
   --- a/python/src/codereview/output/inline.py\n+++ b/python/src/codereview/output/inline.py\n\
-  @@ -31,7 +31,7 @@\n     them on the diff.\n     \"\"\"\n \n-    def build(self,\
-  \ review_result: ReviewResult) -> dict[str, Any]:\n+    def render(self, review_result:\
-  \ ReviewResult) -> dict[str, Any]:\n         \"\"\"Build the review payload.\n \n\
-  \         Args:\n"
+  @@ -32,7 +32,7 @@\n     them on the diff.\n     \"\"\"\n \n-    def build(\n+  \
+  \  def render(\n         self, review_result: ReviewResult, notes: Optional[list[str]]\
+  \ = None\n     ) -> dict[str, Any]:\n         \"\"\"Build the review payload.\n"
 cross_file:
   caller: python/src/codereview/cli/review_cmd.py:214
   note: review_cmd.py 仍然调用 inline_builder.build(result)

@@ -108,7 +108,7 @@ python -m tests.benchmark.bench --kind positive
 | 边界 | 空 diff / 超长行 / 编码非 UTF-8 | 3 |
 | 数据 | 配置字段默认值覆盖用户值 | 3 |
 
-每条注入 = 一段最小 diff（≤ 20 行），从当前 `python/src` 的真实函数改出来，保证上下文真实。
+每条注入 = 一段最小 diff（≤ 20 行），从当前 `python/src` 的真实函数改出来，保证上下文真实。recipe 与 `src/` 的同步由 CI 的 `gen_cases --check` 保证（这条回归就是它该挡住的）。
 
 **6 条真实 PR 样本**：优先从本仓库有真人 review 评论的 PR 取；不足则从 `qodo-ai/pr-agent` 等公开仓库取（评论公开可引用），标注来源链接。
 

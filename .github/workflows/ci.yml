@@ -81,6 +81,9 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e "./python[dev]"
 
+      - name: Check benchmark recipes match source
+        run: cd python && python -m tests.benchmark.gen_cases --check
+
       - name: Run pytest with coverage
         run: pytest python/tests/ -v --tb=short --cov=codereview --cov-report=term-missing
 
