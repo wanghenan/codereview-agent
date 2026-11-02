@@ -479,8 +479,14 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 ```json
 {"generated_at": "...", "config": "...", "cases": [
   {"id": "...", "origin": "real-pr", "kind": "positive", "strictness": "defect", "findings": 17,
+   "finding_details": [
+     {"line": 352, "title": "datetime format drops tz",
+      "evidence": ["DrfDateTimeField.to_internal_value converts ...", "file:line ..."],
+      "suggestion": "..."}],
    "matched": true, "best_delta": 2, "elapsed": 15.2, "error": null}]}
 ```
+
+`finding_details` 是逐条 finding 的锚点信息（`line` / `title` / `evidence` / `suggestion`，`suggestion` 截断 200 字符），用来量"按 finding 自引用的代码片段在 patch 内重定位锚点"的可行性；`findings` 仍是条数，`gate.py` 与旧报告不需要改。
 
 **基线现状（2026-11-02）**：语料已扩到 20 条，但 `baseline.json` 里 `real_pr` 仍是 9 条（那次实测之后官方 DeepSeek 余额用尽，没法用同一模型重跑 20 条）。`gate.py` 在"报告用例数多于基线"时判失败，所以**夜间作业在基线刷新前会红**；仓库目前没配 `DEEPSEEK_API_KEY`，作业会跳过，因此不影响 CI。刷新方式：用 `deepseek-chat` 跑一次 20 条，把 `real_pr.matched` / `total` 改成实测值。
 

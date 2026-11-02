@@ -44,6 +44,25 @@ def make_result(
     }
 
 
+def make_finding(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "file": "pkg/mod.py",
+        "line": 12,
+        "delta": 4,
+        "severity": "medium",
+        "confidence": 0.5,
+        "source": "llm",
+        "category": "bug",
+        "caller": None,
+        "title": "unvalidated lookup",
+        "description": "lookup uses an unvalidated key",
+        "evidence": ["key = request.args['id']"],
+        "suggestion": "validate the key before the lookup",
+    }
+    row.update(overrides)
+    return row
+
+
 def test_json_out_records_strictness_and_null(tmp_path: Path) -> None:
     results = [
         make_result("defect-case", strictness="defect"),
@@ -85,3 +104,100 @@ def test_json_out_reflects_case_yaml(tmp_path: Path) -> None:
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["cases"][0]["strictness"] == declared["strictness"]
     assert payload["cases"][1]["strictness"] is None
+
+
+def test_findings_of_reads_title_and_evidence_details() -> None:
+    result = {
+        "files_reviewed": [
+            {
+                "file_path": "pkg/mod.py",
+                "issues": [
+                    {
+                        "file_path": "pkg/mod.py",
+                        "line_number": 10,
+                        "risk_level": "medium",
+                        "title": "  unvalidated lookup  ",
+                        "description": "  lookup uses an unvalidated key  ",
+                        "evidence": [
+                            {"kind": "context", "detail": "  key = request.args['id']  "},
+                            {"kind": "rule", "detail": ""},
+                        ],
+                        "suggestion": None,
+                    }
+                ],
+            }
+        ]
+    }
+
+    [row] = bench.findings_of(result)
+
+    assert row["title"] == "unvalidated lookup"
+    assert row["evidence"] == ["key = request.args['id']"]
+    assert row["suggestion"] == ""
+
+
+def test_json_out_includes_finding_details(tmp_path: Path) -> None:
+    result = {**make_result("evidence-case"), "findings": [make_finding()]}
+
+    out = bench.write_json([result], tmp_path / "report.json", Path("bench.yaml"))
+
+    case = json.loads(out.read_text(encoding="utf-8"))["cases"][0]
+    assert case["findings"] == 1
+    assert case["finding_details"] == [
+        {
+            "line": 12,
+            "title": "unvalidated lookup",
+            "evidence": ["key = request.args['id']"],
+            "suggestion": "validate the key before the lookup",
+        }
+    ]
+
+
+def test_json_out_missing_evidence_is_empty_list(tmp_path: Path) -> None:
+    finding = make_finding(evidence=[], title="rule-only finding")
+    result = {**make_result("no-evidence"), "findings": [finding]}
+
+    out = bench.write_json([result], tmp_path / "report.json", Path("bench.yaml"))
+
+    case = json.loads(out.read_text(encoding="utf-8"))["cases"][0]
+    assert case["finding_details"][0]["evidence"] == []
+    assert case["finding_details"][0]["title"] == "rule-only finding"
+
+
+def test_json_out_truncates_suggestion(tmp_path: Path) -> None:
+    result = {**make_result("long-suggestion"), "findings": [make_finding(suggestion="x" * 250)]}
+
+    out = bench.write_json([result], tmp_path / "report.json", Path("bench.yaml"))
+
+    case = json.loads(out.read_text(encoding="utf-8"))["cases"][0]
+    assert case["finding_details"][0]["suggestion"] == "x" * 200
+
+
+def test_markdown_appends_first_evidence_snippet(tmp_path: Path) -> None:
+    finding = make_finding(evidence=["key = request.args['id']", "second anchor"])
+    result = {**make_result("evidence-case"), "findings": [finding]}
+
+    text = bench.render([result], tmp_path / "report.md", Path("bench.yaml"))
+
+    assert "| evidence: key = request.args['id']" in text
+    assert "second anchor" not in text
+
+
+def test_markdown_evidence_snippet_is_single_line_and_truncated(tmp_path: Path) -> None:
+    evidence = "first line\n" + "y" * 100
+    result = {**make_result("long-evidence"), "findings": [make_finding(evidence=[evidence])]}
+
+    text = bench.render([result], tmp_path / "report.md", Path("bench.yaml"))
+
+    line = next(line for line in text.splitlines() if line.startswith("- `pkg/mod.py:12`"))
+    snippet = line.split("| evidence: ", 1)[1]
+    assert snippet == ("first line " + "y" * 100)[:80]
+    assert len(snippet) == 80
+
+
+def test_markdown_omits_evidence_suffix_when_absent(tmp_path: Path) -> None:
+    result = {**make_result("no-evidence"), "findings": [make_finding(evidence=[])]}
+
+    text = bench.render([result], tmp_path / "report.md", Path("bench.yaml"))
+
+    assert "evidence:" not in text
