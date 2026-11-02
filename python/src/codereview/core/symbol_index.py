@@ -619,6 +619,42 @@ class SymbolIndex:
         return rel
 
 
+def definition_header_ranges(source: str) -> list[tuple[int, int]]:
+    """Return the inclusive line range of every definition header in ``source``.
+
+    A header is everything that describes a definition's interface: the
+    decorator block, the ``def``/``class`` line, the parameter list and the
+    return annotation.  In AST terms it runs from the first decorator (or the
+    ``def``/``class`` line when undecorated) to the line before the first
+    statement of the body, so a one-line definition such as
+    ``def f(): return 1`` yields the single ``def`` line.
+
+    Args:
+        source: Python source text.
+
+    Returns:
+        One ``(start, end)`` tuple per function, method or class, including
+        nested definitions.  Ranges are 1-based and inclusive.
+
+    Raises:
+        SyntaxError: When ``source`` is not valid Python.
+    """
+    tree = ast.parse(source)
+    ranges: list[tuple[int, int]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if not node.body:
+            continue
+        first_decorator = min(
+            (decorator.lineno for decorator in node.decorator_list), default=node.lineno
+        )
+        # ``body[0].lineno - 1`` is the last header line.  For a one-liner the
+        # body starts on the definition line, hence the clamp.
+        ranges.append((first_decorator, max(first_decorator, node.body[0].lineno - 1)))
+    return ranges
+
+
 def _distance_to_range(start_line: int, end_line: int, range_start: int, range_end: int) -> int:
     """Return 0 when ranges overlap, otherwise the line gap between them."""
     if start_line <= range_end and end_line >= range_start:

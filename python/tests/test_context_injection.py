@@ -13,7 +13,7 @@ import pytest
 from langchain_core.runnables import RunnableLambda
 
 from codereview.agents.reviewer import ReviewAgent, ReviewOrchestrator
-from codereview.core.symbol_index import SymbolIndex
+from codereview.core.symbol_index import SymbolIndex, definition_header_ranges
 from codereview.models import (
     Config,
     ConfigContext,
@@ -317,3 +317,252 @@ def test_custom_prompt_without_cross_file_variable_still_renders(tmp_path: Path)
 
     assert "lib.py" in messages[0].content
     assert "Review lib.py (modified)" in messages[0].content
+
+
+# ---------------------------------------------------------------------------
+# context.neighbors_trigger
+# ---------------------------------------------------------------------------
+
+
+def _agent_for(tmp_path: Path, **context_kwargs) -> ReviewAgent:
+    """Build an agent over ``tmp_path`` with a freshly built symbol index."""
+    return ReviewAgent(
+        _config(**context_kwargs),
+        MagicMock(),
+        _project_context(),
+        project_root=tmp_path,
+        symbol_index=_build_index(tmp_path),
+    )
+
+
+def _body_change_entry() -> DiffEntry:
+    """A diff whose added and deleted lines stay inside ``target``'s body."""
+    return DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,2 +1,2 @@\n def target():\n-    return 1\n+    return 2",
+    )
+
+
+def test_definition_header_ranges_cover_decorators_params_and_one_liners() -> None:
+    """Header ranges start at decorators and end before the body."""
+    source = (
+        "@lru_cache\n"
+        "def target(\n"
+        "    a,\n"
+        "    b,\n"
+        "):\n"
+        "    return a\n"
+        "\n"
+        "class A(Base):\n"
+        "    x = 1\n"
+        "\n"
+        "def one(): return 1\n"
+    )
+
+    assert sorted(definition_header_ranges(source)) == [(1, 5), (8, 8), (11, 11)]
+
+
+def test_default_trigger_still_injects_for_body_only_changes(tmp_path: Path) -> None:
+    """The default ``always`` keeps injecting for body-level edits."""
+    _callers_repo(tmp_path)
+    _write(tmp_path, "lib.py", "def target():\n    return 2\n")
+    entry = _body_change_entry()
+
+    context = _agent_for(tmp_path)._cross_file_context_for(entry)
+
+    assert context.startswith("## Cross-file context")
+    assert "return target()" in context
+
+
+def test_signature_trigger_injects_on_signature_change(tmp_path: Path) -> None:
+    """A changed ``def`` line is a definition header and injects neighbours."""
+    _write(tmp_path, "lib.py", "def target(a, b):\n    return a\n")
+    _write(
+        tmp_path,
+        "app.py",
+        "from lib import target\n\ndef use():\n    return target(1, 2)\n",
+    )
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,2 +1,2 @@\n-def target(a):\n+def target(a, b):\n     return a",
+    )
+
+    context = _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry)
+
+    assert context.startswith("## Cross-file context")
+    assert "caller app.py:" in context
+
+
+def test_signature_trigger_injects_on_added_decorator(tmp_path: Path) -> None:
+    """An added decorator line is part of the definition header."""
+    _callers_repo(tmp_path)
+    _write(tmp_path, "lib.py", "@lru_cache\ndef target():\n    return 1\n")
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=0,
+        patch="@@ -1,2 +1,3 @@\n+@lru_cache\n def target():\n     return 1",
+    )
+
+    context = _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry)
+
+    assert context.startswith("## Cross-file context")
+
+
+def test_signature_trigger_injects_on_multiline_parameter_insertion(tmp_path: Path) -> None:
+    """A parameter added between existing lines is still in the header."""
+    _callers_repo(tmp_path)
+    _write(
+        tmp_path,
+        "lib.py",
+        "def target(\n    a,\n    c,\n    b,\n):\n    return a\n",
+    )
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=0,
+        patch="@@ -1,5 +1,6 @@\n def target(\n     a,\n+    c,\n     b,\n ):\n     return a",
+    )
+
+    context = _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry)
+
+    assert context.startswith("## Cross-file context")
+
+
+def test_signature_trigger_injects_on_class_header_change(tmp_path: Path) -> None:
+    """Changing only the base-class list counts as a header change."""
+    _write(tmp_path, "lib.py", "class A(B):\n    x = 1\n")
+    _write(
+        tmp_path,
+        "app.py",
+        "from lib import A\n\ndef make():\n    return A()\n",
+    )
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,2 +1,2 @@\n-class A:\n+class A(B):\n     x = 1",
+    )
+
+    context = _agent_for(tmp_path, neighbors_trigger="signature")._cross_file_context_for(entry)
+
+    assert context.startswith("## Cross-file context")
+
+
+def test_signature_trigger_skips_body_only_changes(tmp_path: Path) -> None:
+    """A body-level edit injects nothing even though neighbours exist."""
+    _callers_repo(tmp_path)
+    _write(tmp_path, "lib.py", "def target():\n    return 2\n")
+    entry = _body_change_entry()
+    agent = _agent_for(tmp_path, neighbors_trigger="signature")
+
+    # The same agent injects for a header change, so the index really has a
+    # caller and the empty result below is the trigger's decision.
+    header_entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,2 +1,2 @@\n-def target():\n+def target(a):\n     return 2",
+    )
+    assert agent._cross_file_context_for(header_entry).startswith("## Cross-file context")
+
+    assert agent._cross_file_context_for(entry) == ""
+
+
+def test_signature_trigger_maps_pure_deletions_to_the_new_side(tmp_path: Path) -> None:
+    """A removed line is judged at the new-side position where it was removed."""
+    _callers_repo(tmp_path)
+    _write(tmp_path, "lib.py", "def target(\n    a,\n):\n    return a\n")
+    parameter_agent = _agent_for(tmp_path, neighbors_trigger="signature")
+
+    removed_parameter = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=0,
+        deletions=1,
+        patch=(
+            "@@ -1,5 +1,4 @@\n"
+            " def target(\n"
+            "     a,\n"
+            "-    b,\n"
+            " ):\n"
+            "     return a"
+        ),
+    )
+
+    assert parameter_agent._cross_file_context_for(removed_parameter).startswith(
+        "## Cross-file context"
+    )
+
+    _write(tmp_path, "lib.py", "def target():\n    return 1\n")
+    body_agent = _agent_for(tmp_path, neighbors_trigger="signature")
+    removed_body_line = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=0,
+        deletions=1,
+        patch=(
+            "@@ -1,3 +1,2 @@\n"
+            " def target():\n"
+            "-    x = 0\n"
+            "     return 1"
+        ),
+    )
+
+    assert body_agent._cross_file_context_for(removed_body_line) == ""
+
+
+def test_signature_trigger_degrades_on_bad_or_missing_files(tmp_path: Path) -> None:
+    """Invalid Python and absent files skip injection without raising."""
+    _callers_repo(tmp_path)
+    broken = _write(tmp_path, "broken.py", "def broken(:\n    return 1\n")
+    assert broken.exists()
+    agent = _agent_for(tmp_path, neighbors_trigger="signature")
+
+    broken_entry = DiffEntry(
+        filename="broken.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,2 +1,2 @@\n-def broken(x):\n+def broken(:\n     return 1",
+    )
+    missing_entry = DiffEntry(
+        filename="ghost.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,1 +1,1 @@\n-def ghost():\n+def ghost(x):",
+    )
+
+    assert agent._cross_file_context_for(broken_entry) == ""
+    assert agent._cross_file_context_for(missing_entry) == ""
+
+
+def test_neighbors_false_wins_over_signature_trigger(tmp_path: Path) -> None:
+    """``context.neighbors: false`` still disables injection entirely."""
+    _write(tmp_path, "lib.py", "def target(a, b):\n    return a\n")
+    _write(
+        tmp_path,
+        "app.py",
+        "from lib import target\n\ndef use():\n    return target(1, 2)\n",
+    )
+    entry = DiffEntry(
+        filename="lib.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -1,2 +1,2 @@\n-def target(a):\n+def target(a, b):\n     return a",
+    )
+    agent = _agent_for(tmp_path, neighbors=False, neighbors_trigger="signature")
+
+    assert agent._cross_file_context_for(entry) == ""

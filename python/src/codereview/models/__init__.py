@@ -249,6 +249,13 @@ class ConfigContext(BaseModel):
         default=True,
         description="Inject one-hop symbol neighbours into review prompts",
     )
+    neighbors_trigger: Literal["always", "signature"] = Field(
+        default="always",
+        description=(
+            "Inject neighbours on every change, or only when changed lines "
+            "touch a definition header"
+        ),
+    )
     max_neighbors: int = Field(
         default=3,
         ge=0,

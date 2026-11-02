@@ -22,7 +22,7 @@ from tqdm import tqdm
 from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.finding_filter import FilterRules, filter_findings
 from codereview.core.path_matcher import ExcludeMatcher
-from codereview.core.symbol_index import Neighbor, SymbolIndex
+from codereview.core.symbol_index import Neighbor, SymbolIndex, definition_header_ranges
 from codereview.core.tool_runner import (
     RULE_TOOL_ERROR,
     RULE_TOOL_TIMEOUT,
@@ -562,12 +562,69 @@ class ReviewAgent:
             return None
         return min(start for start, _ in ranges), max(end for _, end in ranges)
 
+    @staticmethod
+    def _changed_new_lines(patch: str) -> list[int]:
+        """Return new-file line numbers of the added and deleted diff lines.
+
+        A deleted line has no new-file line of its own, so it maps to the
+        current new-side counter: the position where the removal happened.
+        Hunk headers and ``\\ No newline at end of file`` markers are skipped.
+        """
+        lines: list[int] = []
+        new_line = 0
+        for raw in patch.splitlines():
+            if raw.startswith("@@"):
+                match = _HUNK_RANGE_RE.search(raw)
+                new_line = int(match.group(1)) if match else 0
+                continue
+            if new_line <= 0 or raw.startswith("\\"):
+                continue
+            if raw.startswith("+"):
+                lines.append(new_line)
+                new_line += 1
+            elif raw.startswith("-"):
+                lines.append(new_line)
+            else:
+                new_line += 1
+        return lines
+
+    def _touches_definition_header(self, entry: DiffEntry) -> bool:
+        """Return whether a changed line falls in a definition header.
+
+        Used when ``context.neighbors_trigger`` is ``signature``: the header is
+        the decorator block, ``def``/``class`` line, parameter list and return
+        annotation of a definition in the reviewed file.  Every failure
+        (deleted, missing or unreadable file, invalid Python, stale line
+        numbers) is treated as "no header touched" so injection is skipped and
+        the review continues.
+        """
+        if entry.status == "deleted":
+            return False
+        changed_lines = self._changed_new_lines(entry.patch or "")
+        if not changed_lines:
+            return False
+
+        try:
+            source = (self.project_root / entry.filename).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            logger.debug("Skipping signature trigger for unreadable %s: %s", entry.filename, exc)
+            return False
+
+        try:
+            ranges = definition_header_ranges(source)
+        except (SyntaxError, ValueError, RecursionError) as exc:
+            logger.debug("Skipping signature trigger for unparseable %s: %s", entry.filename, exc)
+            return False
+
+        return any(start <= line <= end for line in changed_lines for start, end in ranges)
+
     def _cross_file_context_for(self, entry: DiffEntry) -> str:
         """Render bounded one-hop neighbours for the file under review.
 
         Returns an empty string whenever cross-file context is disabled, the
-        index is absent/empty, the diff has no usable range, or lookup fails.
-        Context injection is best-effort and must never abort a review.
+        ``signature`` trigger does not match, the index is absent/empty, the
+        diff has no usable range, or lookup fails.  Context injection is
+        best-effort and must never abort a review.
         """
         if self.symbol_index is None:
             return ""
@@ -582,6 +639,10 @@ class ReviewAgent:
 
         changed = self._changed_range(entry)
         if changed is None:
+            return ""
+
+        signature_only = context_config.neighbors_trigger == "signature"
+        if signature_only and not self._touches_definition_header(entry):
             return ""
 
         try:
