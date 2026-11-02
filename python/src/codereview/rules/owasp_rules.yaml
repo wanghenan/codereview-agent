@@ -30,7 +30,11 @@ rules:
 
   - id: OWASP-A01-003
     name: SQL injection risk
-    pattern: "execute|exec\\(|query\\(|cursor\\.execute\\([^)]*%s|\\+.*['\"].*(SELECT|INSERT|UPDATE|DELETE|UNION)"
+    # Only flag real SQL call sites: a DB handle executing, or a bare
+    # execute/exec/query call / string concatenation next to a SQL keyword.
+    # A plain `execute` branch used to match prose such as "executed".
+    pattern: >-
+      \b(?:\w*(?:cursor|conn(?:ection)?|session|engine)|cur|db)\b[^;\n]*?\.\s*\w*execute(?:many)?\s*\(|(?=.*[\x27\x22][^\x27\x22]*\b(?:SELECT|INSERT|UPDATE|DELETE|REPLACE|PRAGMA)\b)\b(?:execute|exec|query)\s*\(|^(?=.*[\x27\x22][^\x27\x22]*\b(?:SELECT|INSERT|UPDATE|DELETE|REPLACE|PRAGMA)\b)(?=.*(?:\+\s*[\x27\x22]|[\x27\x22]\s*\+|%\s*[sdf]\b)).*
     severity: high
     description: "Potential SQL injection vulnerability detected."
     suggestion: "Use parameterized queries or prepared statements."
