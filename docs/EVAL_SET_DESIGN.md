@@ -280,7 +280,7 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 
 顺带修掉一个基准自身的错误：`cross_file` 里记录的调用方行号是早期版本的行号，S5 接线后代码下移了 20–30 行，导致"模型说对了却判错"。刷新元数据后，模型此前输出的 `1084 / 1242 / 661 / 228` 全部命中。**又一个尺子坏掉的例子——这次是基准数据过期。**
 
-### 真实 PR 语料（8 条，2026-11-01）
+### 真实 PR 语料（9 条，2026-11-01）
 
 前面所有数字都建立在**注入样本**上：我们照着当前代码把缺陷重新敲进去，再让模型读 diff。它能证明"看得见的问题不会漏"，但回答不了评审真正的难题——**真人 reviewer 会不会认为这里有问题**。本仓库历史 PR 没有实质人工 review，所以语料取自公开仓库。
 
@@ -312,10 +312,10 @@ review_comment: {author: bluetech, url: "…discussion_r1161316259", body: "…"
 
 ```bash
 python tests/benchmark/bench.py --all --origin real-pr --config <bench.yaml> --out reports/real-pr-8.md
-python tests/benchmark/bench.py --validate --origin real-pr     # 校验 8 条 diff 都能应用到 base
+python tests/benchmark/bench.py --validate --origin real-pr     # 校验 9 条 diff 都能应用到 base
 ```
 
-**语料（8 条，6 个仓库）**
+**语料（9 条，6 个仓库）**
 
 | 用例 | 位置 | 类别 | strictness |
 |---|---|---|---|
@@ -327,6 +327,7 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 8 条 d
 | `real-django-enqueue-on-commit-single-db` | django#18627 `backends/base.py:50` | bug/medium | design |
 | `real-aiohttp-cause-without-traceback` | aiohttp#8089 `helpers.py:830` | maintainability/low | design |
 | `real-requests-timedcache-keyerror` | requests#3885 `structures.py:169` | maintainability/low | nit |
+| `real-django-migrate-install-error-swallowed` | django#376 `migrate.py:239` | bug/medium | defect |
 
 **结果（deepseek-chat，单文件切片，上下文开）**
 
