@@ -619,6 +619,44 @@ class SymbolIndex:
         return rel
 
 
+def definition_spans(source: str) -> list[tuple[int, int, int]]:
+    """Return ``(start, end, header_end)`` for every definition in ``source``.
+
+    ``start`` is the first decorator line (or the ``def``/``class`` line when
+    undecorated) and ``end`` is the definition's last line, so a definition
+    span includes nested definitions.  ``header_end`` is the line before the
+    body starts: the decorators, signature, parameter list and return
+    annotation all fall in ``[start, header_end]``.  A one-line definition such
+    as ``def f(): return 1`` has ``start == end == header_end``.
+
+    Args:
+        source: Python source text.
+
+    Returns:
+        One 1-based, inclusive tuple per function, method or class, including
+        nested definitions.
+
+    Raises:
+        SyntaxError: When ``source`` is not valid Python.
+    """
+    tree = ast.parse(source)
+    spans: list[tuple[int, int, int]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if not node.body:
+            continue
+        first_decorator = min(
+            (decorator.lineno for decorator in node.decorator_list), default=node.lineno
+        )
+        # ``body[0].lineno - 1`` is the last header line.  For a one-liner the
+        # body starts on the definition line, hence the clamp.
+        header_end = max(first_decorator, node.body[0].lineno - 1)
+        end = getattr(node, "end_lineno", None) or node.lineno
+        spans.append((first_decorator, end, header_end))
+    return spans
+
+
 def _distance_to_range(start_line: int, end_line: int, range_start: int, range_end: int) -> int:
     """Return 0 when ranges overlap, otherwise the line gap between them."""
     if start_line <= range_end and end_line >= range_start:

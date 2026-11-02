@@ -59,6 +59,13 @@ cache:
   ttl: 7                   # 项目上下文缓存天数 (默认 7)
   forceRefresh: false      # 是否强制刷新
 
+# 跨文件上下文（符号索引 + 邻域注入）
+context:
+  neighbors: true          # 是否注入邻域
+  neighbors_trigger: always  # always | signature
+  max_neighbors: 3         # 每个文件最多注入几个邻域
+  max_chars: 2400          # 跨文件上下文段的最大字符数
+
 # 输出配置
 output:
   prComment: true         # 是否在 PR 上评论
@@ -192,6 +199,57 @@ cache:
 cache:
   forceRefresh: true  # 强制重新分析项目
 ```
+
+---
+
+## 上下文配置 (context)
+
+把符号索引中的一跳邻域（调用方、导入方、同文件兄弟定义）注入评审 prompt。索引用 stdlib `ast` 构建并持久化到 `.codereview-agent/index.json`。该能力是尽力而为的：索引缺失或解析失败只会跳过注入，不影响评审。
+
+```yaml
+context:
+  neighbors: true
+  neighbors_trigger: always
+  max_neighbors: 3
+  max_chars: 2400
+  index_path: .codereview-agent/index.json
+  auto_build: true
+```
+
+### context.neighbors
+
+总开关。设为 `false` 时完全不注入，且优先于 `neighbors_trigger`。
+
+### context.neighbors_trigger
+
+控制**哪些改动形态**注入邻域：
+
+| 值 | 行为 |
+|----|------|
+| `always`（默认） | 每次改动都注入。 |
+| `signature` | 只有某个定义自身的改动**全部**落在头部（装饰器、`def` / `class` 行、参数列表、返回注解）时才注入；同一定义内只要有一行正文被改就不注入。整段重写、新增函数的整块代码、模块级 import / 常量改动也不会注入。 |
+
+判定时逐条 changed line 取最内层定义；多个定义中任一满足即可。因此外层函数体变了、只有内层函数改了签名，仍会注入。
+
+`signature` 的依据见 [EVAL_SET_DESIGN.md](EVAL_SET_DESIGN.md) 的「`context.neighbors` 在真实语料上的对照」：签名级改动需要调用方证据，而正文级改动上邻域没有信息增量，反而多 20–30% token 并把模型注意力带离眼前那行。默认仍为 `always`，是否切换等待实测数据。
+
+判定为尽力而为：文件被删除 / 不存在、源码不是可解析的 Python、行号映射不出来时都按「不注入」处理，不会抛异常。
+
+### context.max_neighbors
+
+每个被评审文件最多注入的邻域数，默认 `3`；设为 `0` 等同于关闭注入。
+
+### context.max_chars
+
+跨文件上下文段的最大字符数，超出时截断并标记 `... [truncated]`，默认 `2400`；设为 `0` 等同于关闭注入。
+
+### context.index_path
+
+符号索引的持久化路径，默认 `.codereview-agent/index.json`。
+
+### context.auto_build
+
+索引缺失或过期时是否自动构建并保存，默认 `true`。
 
 ---
 
