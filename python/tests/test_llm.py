@@ -1,7 +1,10 @@
 """Tests for LLM factory and provider creation."""
 
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
+from codereview.core.config import ConfigLoader
 from codereview.core.llm import LLMFactory
 from codereview.models import ConfigLLM, LLMProvider
 
@@ -299,3 +302,89 @@ class TestLLMFactory:
             LLMFactory.create(config)
             call_kwargs = mock_openai.call_args[1]
             assert call_kwargs["api_key"] == ""
+
+    def test_headers_forwarded_to_anthropic(self):
+        """Test custom headers reach ChatAnthropic as default_headers."""
+        headers = {"x-opencode-session": "00000000-0000-4000-8000-000000000000"}
+        config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go",
+            headers=headers,
+        )
+        with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
+            LLMFactory.create(config)
+            call_kwargs = mock_anthropic.call_args[1]
+            assert call_kwargs["default_headers"] == headers
+
+    def test_headers_forwarded_to_openai(self):
+        """Test custom headers reach ChatOpenAI (OpenAI branch)."""
+        headers = {"x-custom-token": "token-value"}
+        config = ConfigLLM(
+            provider=LLMProvider.OPENAI,
+            api_key="test-key",
+            headers=headers,
+        )
+        with patch("codereview.core.llm.ChatOpenAI") as mock_openai:
+            LLMFactory.create(config)
+            call_kwargs = mock_openai.call_args[1]
+            assert call_kwargs["default_headers"] == headers
+
+    def test_headers_forwarded_to_compatible(self):
+        """Test custom headers reach ChatOpenAI (OpenAI-compatible branch)."""
+        headers = {"x-custom-token": "token-value"}
+        config = ConfigLLM(
+            provider=LLMProvider.DEEPSEEK,
+            api_key="test-key",
+            headers=headers,
+        )
+        with patch("codereview.core.llm.ChatOpenAI") as mock_openai:
+            LLMFactory.create(config)
+            call_kwargs = mock_openai.call_args[1]
+            assert call_kwargs["default_headers"] == headers
+
+    def test_empty_headers_keep_constructor_unchanged(self):
+        """Test no default_headers kwarg is passed when headers are empty."""
+        configs = [
+            ConfigLLM(provider=LLMProvider.OPENAI, api_key="test-key"),
+            ConfigLLM(provider=LLMProvider.ANTHROPIC, api_key="test-key"),
+            ConfigLLM(provider=LLMProvider.DEEPSEEK, api_key="test-key"),
+        ]
+        for config in configs:
+            target = (
+                "codereview.core.llm.ChatAnthropic"
+                if config.provider == LLMProvider.ANTHROPIC
+                else "codereview.core.llm.ChatOpenAI"
+            )
+            with patch(target) as mock_client:
+                LLMFactory.create(config)
+                assert "default_headers" not in mock_client.call_args[1]
+
+    def test_config_loader_resolves_headers(self):
+        """Test ${VAR} in header values is resolved and names are preserved."""
+        os.environ["TEST_HEADER_TOKEN"] = "resolved-token"
+        config_content = """
+llm:
+  provider: anthropic
+  apiKey: ${TEST_HEADER_TOKEN}
+  baseUrl: https://opencode.ai/zen/go
+  model: deepseek-v4.1-flash
+  headers:
+    x-opencode-session: 00000000-0000-4000-8000-000000000000
+    X-Custom-Header: ${TEST_HEADER_TOKEN}
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(config_content)
+            f.flush()
+            config = ConfigLoader.load(f.name)
+
+        os.unlink(f.name)
+        del os.environ["TEST_HEADER_TOKEN"]
+
+        assert config.llm.headers == {
+            "x-opencode-session": "00000000-0000-4000-8000-000000000000",
+            "X-Custom-Header": "resolved-token",
+        }
+        with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
+            LLMFactory.create(config.llm)
+            assert mock_anthropic.call_args[1]["default_headers"] == config.llm.headers

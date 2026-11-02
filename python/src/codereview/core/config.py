@@ -83,11 +83,18 @@ class ConfigLoader:
 
     @classmethod
     def _normalize_keys(cls, data: dict) -> dict:
-        """Recursively convert camelCase dict keys to snake_case."""
+        """Recursively convert camelCase dict keys to snake_case.
+
+        Header maps under a ``headers`` key are opaque HTTP header names, so
+        they are copied verbatim: ``x-opencode-session`` must not turn into
+        ``x_opencode_session``.
+        """
         result = {}
         for key, value in data.items():
             snake_key = cls._to_snake_case(key)
-            if isinstance(value, dict):
+            if snake_key == "headers" and isinstance(value, dict):
+                result[snake_key] = dict(value)
+            elif isinstance(value, dict):
                 result[snake_key] = cls._normalize_keys(value)
             elif isinstance(value, list):
                 result[snake_key] = [

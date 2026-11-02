@@ -13,6 +13,7 @@ llm:
   apiKey: ${LLM_API_KEY}   # 或直接填入 API Key
   model: abab6.5s-chat      # 模型名称 (可选)
   baseUrl: ""               # 自定义 API 地址 (可选)
+  headers: {}               # 额外请求头 (可选，见下文)
   temperature: 0.7          # 采样温度 (0.0-2.0，默认 0.7)
   fallback_providers:       # LLM fallback 链
     - provider: anthropic
@@ -115,6 +116,23 @@ llm:
   apiKey: dummy
   baseUrl: http://localhost:8080/v1
   model: your-model
+```
+
+### headers
+
+额外 HTTP 请求头，会作为 `default_headers` 透传给每个 LLM 请求。适用于要求自定义 header 的网关（例如 opencode-go 的 Zen 端点需要 `x-opencode-session`）。
+
+- 键名按原样发送（不会被转换成 snake_case），值的 `${VAR}` 占位符会被解析；
+- 留空或不配置时行为不变。
+
+```yaml
+llm:
+  provider: anthropic
+  apiKey: ${OPENCODE_GO_API_KEY}
+  baseUrl: https://opencode.ai/zen/go
+  model: deepseek-v4.1-flash
+  headers:
+    x-opencode-session: 00000000-0000-4000-8000-000000000000
 ```
 
 ---
