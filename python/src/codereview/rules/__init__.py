@@ -13,6 +13,10 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# Unified diff hunk header, e.g. "@@ -12,7 +14,9 @@ def foo():".
+# Groups: old line count, new start line, new line count.
+_HUNK_HEADER_RE = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
 
 @dataclass
 class DetectionRule:
@@ -174,27 +178,100 @@ class RuleEngine:
     def detect_in_diff(self, diff_content: str, language: Optional[str] = None) -> list[dict]:
         """Detect risks in diff content.
 
+        Added lines are scanned together, but findings are reported with the
+        line number they have in the new version of the file, not the position
+        inside the concatenated added-lines block. Hunk headers
+        (``@@ -a,b +c,d @@``) provide that mapping; every hunk is mapped
+        independently so multi-hunk patches stay accurate.
+
         Args:
             diff_content: Diff/patch content
             language: Programming language
 
         Returns:
-            List of detected issues in diff
+            List of detected issues in diff, with new-file line numbers
         """
-        issues = []
+        added_lines, line_numbers = self._added_lines_from_diff(diff_content)
 
-        # Extract added lines from diff
-        added_lines = []
-        for line in diff_content.split("\n"):
-            if line.startswith("+") and not line.startswith("+++"):
-                added_lines.append(line[1:])  # Remove +
+        if not added_lines:
+            return []
 
-        added_content = "\n".join(added_lines)
+        issues = self.detect("\n".join(added_lines), language)
 
-        # Run detection on added content
-        issues = self.detect(added_content, language)
+        for issue in issues:
+            position = issue.get("line_number")
+            if isinstance(position, int) and 1 <= position <= len(line_numbers):
+                issue["line_number"] = line_numbers[position - 1]
 
+        issues.sort(key=lambda issue: issue.get("line_number") or 0)
         return issues
+
+    @staticmethod
+    def _added_lines_from_diff(diff_content: str) -> tuple[list[str], list[int]]:
+        """Extract added lines and their line numbers in the new file.
+
+        Args:
+            diff_content: Diff/patch content
+
+        Returns:
+            Tuple of added line contents and the matching new-file line numbers
+        """
+        lines = diff_content.split("\n")
+
+        # Patches without hunk headers carry no position information; keep the
+        # previous relative numbering instead of dropping the added lines.
+        if not any(line.startswith("@@") for line in lines):
+            added = [
+                line[1:] for line in lines if line.startswith("+") and not line.startswith("+++")
+            ]
+            return added, list(range(1, len(added) + 1))
+
+        added_lines: list[str] = []
+        line_numbers: list[int] = []
+        new_line = 0
+        old_remaining = 0
+        new_remaining = 0
+        in_hunk = False
+
+        for line in lines:
+            if line.startswith("diff --git ") or line.startswith("diff --cc "):
+                in_hunk = False
+                continue
+
+            if line.startswith("@@"):
+                match = _HUNK_HEADER_RE.match(line)
+                if not match:
+                    in_hunk = False
+                    continue
+                old_remaining = int(match.group(1)) if match.group(1) else 1
+                new_line = int(match.group(2))
+                new_remaining = int(match.group(3)) if match.group(3) else 1
+                in_hunk = True
+                continue
+
+            if not in_hunk:
+                continue
+
+            if line.startswith("\\"):
+                # "\ No newline at end of file" is not a content line.
+                continue
+            if line.startswith("+"):
+                added_lines.append(line[1:])
+                line_numbers.append(new_line)
+                new_line += 1
+                new_remaining -= 1
+            elif line.startswith("-"):
+                old_remaining -= 1
+            else:
+                # Context line (including an empty one): present in both files.
+                new_line += 1
+                new_remaining -= 1
+                old_remaining -= 1
+
+            if old_remaining <= 0 and new_remaining <= 0:
+                in_hunk = False
+
+        return added_lines, line_numbers
 
     def get_rules_by_severity(self, severity: str) -> list[DetectionRule]:
         """Get rules by severity level.
