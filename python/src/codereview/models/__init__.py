@@ -208,6 +208,11 @@ class ConfigLLM(BaseModel):
         default_factory=dict,
         description="Extra HTTP headers for every LLM request",
     )
+    max_tokens: Optional[int] = Field(
+        default=None,
+        ge=256,
+        description="Maximum output tokens per request; unset keeps the client default",
+    )
 
 
 class ConfigCache(BaseModel):

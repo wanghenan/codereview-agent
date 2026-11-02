@@ -10,10 +10,10 @@ import logging
 from pathlib import Path
 from typing import Any, TypedDict
 
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph
 
+from codereview.core.llm_output import parse_json_object
 from codereview.models import Config, ProjectContext
 
 logger = logging.getLogger(__name__)
@@ -215,10 +215,14 @@ class ProjectAnalyzer:
         )
 
         # Create chain
-        chain = prompt | self.llm | JsonOutputParser()
+        chain = prompt | self.llm
 
         try:
-            result = await chain.ainvoke({"files_info": files_info, "root_dir": str(root_dir)})
+            result = parse_json_object(
+                await chain.ainvoke({"files_info": files_info, "root_dir": str(root_dir)})
+            )
+            if result is None:
+                raise ValueError("Project analysis returned no JSON object")
 
             return ProjectContext(
                 tech_stack=result.get("tech_stack", []),

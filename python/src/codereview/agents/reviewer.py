@@ -14,13 +14,18 @@ import re
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph
 from tqdm import tqdm
 
 from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.finding_filter import FilterRules, filter_findings
+
+# Re-exported for tests that exercise the object-scanning helper directly.
+from codereview.core.llm_output import (
+    extract_balanced_object as _extract_balanced_object,  # noqa: F401
+)
+from codereview.core.llm_output import parse_json_object
 from codereview.core.path_matcher import ExcludeMatcher
 from codereview.core.symbol_index import Neighbor, SymbolIndex, definition_spans
 from codereview.core.tool_runner import (
@@ -79,52 +84,6 @@ try:
 except ImportError:
     RULES_AVAILABLE = False
     logger.warning("Rule engine not available, skipping static analysis")
-
-
-def _extract_balanced_object(text: str) -> Optional[str]:
-    """Extract the first balanced ``{...}`` JSON object from ``text``.
-
-    Scans for an opening ``{`` and tracks brace depth to arbitrary nesting,
-    ignoring braces inside string literals (handling ``\\"`` escapes). Returns
-    the substring of the first object whose braces balance, or ``None``.
-
-    Unlike a fixed-depth regex this handles deeply nested objects correctly,
-    e.g. ``{"a":{"b":{"c":1}}}``.
-
-    Args:
-        text: Text that may contain a JSON object.
-
-    Returns:
-        The balanced object substring, or None.
-    """
-    start = -1
-    depth = 0
-    in_string = False
-    escape = False
-
-    for i, ch in enumerate(text):
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            if depth > 0:
-                depth -= 1
-                if depth == 0 and start != -1:
-                    return text[start : i + 1]
-
-    return None
 
 
 def _raise_os_error(error: OSError) -> None:
@@ -826,7 +785,7 @@ class ReviewAgent:
 
         cross_file_context = self._cross_file_context_for(entry)
         prompt = self._build_prompt(entry)
-        chain = prompt | self.llm | JsonOutputParser()
+        chain = prompt | self.llm
 
         try:
             # Run with timeout
@@ -848,8 +807,9 @@ class ReviewAgent:
                 timeout=self.timeout_seconds,
             )
 
-            # If JsonOutputParser returned None or invalid, try to repair
-            result = raw_result if isinstance(raw_result, dict) else self._repair_json_output(raw_result)
+            # Providers may answer with content blocks (thinking beside text);
+            # parse_json_object normalises those before extracting the object.
+            result = self._repair_json_output(raw_result)
 
             if result is None:
                 raise ValueError("Failed to parse LLM output as JSON")
@@ -922,50 +882,19 @@ class ReviewAgent:
 
     @staticmethod
     def _repair_json_output(raw: Any) -> Optional[dict]:
-        """Try to extract valid JSON from malformed LLM output.
+        """Extract the review JSON from a provider message.
 
-        Handles common cases:
-        - LLM wraps JSON in markdown code blocks
-        - Extra text before/after the JSON
-        - Truncated JSON
+        Accepts an ``AIMessage``, a content block list (thinking blocks are
+        dropped), a plain string, or an already parsed dict; tolerates markdown
+        fences and prose around the object.
 
         Args:
-            raw: Raw LLM output (may be string, dict, or other)
+            raw: Raw LLM output.
 
         Returns:
-            Parsed dict or None if unrepairable
+            Parsed dict or None if unrepairable.
         """
-        if isinstance(raw, dict):
-            return raw
-
-        text = str(raw) if raw is not None else ""
-        if not text.strip():
-            return None
-
-        # Try to find JSON block in text
-        import re
-
-        # Match markdown code blocks first: ```json ... ``` or ``` ... ```
-        code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
-        if code_block:
-            try:
-                return json.loads(code_block.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        # Extract the outermost balanced JSON object via a brace-counting
-        # scan. The previous regex handled only a single nesting level and
-        # silently truncated deeply-nested objects; the scan below supports
-        # arbitrary depth and respects string literals so braces inside
-        # strings don't confuse the counter.
-        extracted = _extract_balanced_object(text)
-        if extracted is not None:
-            try:
-                return json.loads(extracted)
-            except json.JSONDecodeError:
-                pass
-
-        return None
+        return parse_json_object(raw)
 
     def _build_prompt(self, entry: DiffEntry) -> ChatPromptTemplate:
         """Build prompt for file review.

@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
-from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
+from codereview.core.llm_output import parse_json_object
 from codereview.models import FileIssue, RiskLevel
 
 logger = logging.getLogger(__name__)
@@ -302,10 +302,10 @@ class CodeFixer:
             language=language,
         )
 
-        chain = prompt | self.llm | JsonOutputParser()
+        chain = prompt | self.llm
 
         try:
-            result = await asyncio.wait_for(
+            result = parse_json_object(await asyncio.wait_for(
                 chain.ainvoke(
                     {
                         "file_path": issue.file_path,
@@ -318,7 +318,9 @@ class CodeFixer:
                     }
                 ),
                 timeout=self.timeout_seconds,
-            )
+            ))
+            if result is None:
+                raise ValueError("Fix suggestion returned no JSON object")
 
             return FixSuggestion(
                 issue=issue,

@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/core/llm.py
 expect:
   file: python/src/codereview/core/llm.py
-  line: 209
+  line: 222
   line_tolerance: 5
   category: bug
   severity: medium
@@ -15,7 +15,7 @@ tags:
 - fallback
 diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
   --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
-  @@ -206,7 +206,7 @@\n             fallback_configs: List of fallback ConfigLLM configs\
+  @@ -219,7 +219,7 @@\n             fallback_configs: List of fallback ConfigLLM configs\
   \ (max 2)\n         \"\"\"\n         self._primary_llm = primary_llm\n-        self._fallback_configs\
   \ = fallback_configs[:2]  # Max 2 fallbacks\n+        self._fallback_configs = fallback_configs[:0]\
   \  # Max 2 fallbacks\n         # Lazily-created fallback LLM instances, keyed by\
