@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/core/llm.py
 expect:
   file: python/src/codereview/core/llm.py
-  line: 175
+  line: 187
   line_tolerance: 5
   category: bug
   severity: medium
@@ -15,6 +15,6 @@ tags:
 - error-handling
 diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
   --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
-  @@ -172,7 +172,7 @@\n                 last_error = e\n                 logger.warning(f\"\
+  @@ -184,7 +184,7 @@\n                 last_error = e\n                 logger.warning(f\"\
   Provider {provider_name} failed: {e}\")\n \n-        raise last_error or Exception(\"\
   All LLM providers failed\")\n+        raise last_error\n \n \n class _FallbackChainLLM:\n"
