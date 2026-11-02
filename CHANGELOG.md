@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Rules now scan code only: `rules/code_only.py` blanks comments and docstrings before matching while keeping every line number and inline string literal intact (Python via `tokenize`, other languages best effort for `#`, `//` and `/* ... */`). Prose such as `# Never eval() untrusted input.` no longer produces HIGH findings, and unparsable input is returned unchanged instead of raising.
 - LLM JSON parsing accepts provider content-block replies: Anthropic-compatible gateways answer with a list of `thinking` + `text` blocks, which `JsonOutputParser` could not read (empty "Invalid json output"). `core/llm_output.py` now takes the text blocks, strips fences and prose, and the reviewer, project analyzer and fixer all use it.
 
 ### Added
