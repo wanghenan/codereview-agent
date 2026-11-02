@@ -1,0 +1,31 @@
+id: real-aiohttp-9732-middleware-default
+kind: positive
+origin: real-pr
+language: python
+repo: aio-libs/aiohttp
+base_commit: e5d1240babff6db6297e0d92f174446de19cf76d
+pr: 9732
+pr_title: Add Client Middleware Support
+review_comment:
+  author: Dreamsorcerer
+  url: https://github.com/aio-libs/aiohttp/pull/9732#discussion_r2096325578
+  body: It might simplify the code checks and optimise slightly if we disallow None here and just default
+    to `()`.
+file: aiohttp/client.py
+expect:
+  file: aiohttp/client.py
+  line: 458
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: middlewares 参数允许 None，但实现仍需判空；默认 () 可以去掉分支
+  why: 签名是 Optional[Tuple[...]] = None，内部每次都要区分 None 和空元组；如果约定空中间件就是 ()，可以直接默认 ()，删除判空分支并让类型更准确。
+tags:
+- real-pr
+- api
+- optional
+diff: "diff --git a/aiohttp/client.py b/aiohttp/client.py\n--- a/aiohttp/client.py\n+++ b/aiohttp/client.py\n\
+  @@ -450,3 +455,4 @@\n         auto_decompress: Optional[bool] = None,\n         max_line_size: Optional[int]\
+  \ = None,\n         max_field_size: Optional[int] = None,\n+        middlewares: Optional[Tuple[ClientMiddlewareType,\
+  \ ...]] = None,\n"
+strictness: design

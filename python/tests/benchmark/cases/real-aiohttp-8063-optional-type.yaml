@@ -1,0 +1,35 @@
+id: real-aiohttp-8063-optional-type
+kind: positive
+origin: real-pr
+language: python
+repo: aio-libs/aiohttp
+base_commit: 026e8d9872ab4511c38578a8c784cd2e740f0448
+pr: 8063
+pr_title: Add server capability to check for Brotli compressed static files
+review_comment:
+  author: webknjaz
+  url: https://github.com/aio-libs/aiohttp/pull/8063#discussion_r1468974488
+  body: "`Optional` is considered confusing, this name doesn't relay the semantics well. There's even\
+    \ a linter forbidding it (it's called `no-optional`). The alternative is to explicitly say that it's\
+    \ one of two types:\r\n```suggestion\r\n    ) -> Tuple[pathlib.Path, os.stat_result, Union[str, None]]:\r\
+    \n```\r\n(for py3.10+ it'd be `str | None`, of course)"
+file: aiohttp/web_fileresponse.py
+expect:
+  file: aiohttp/web_fileresponse.py
+  line: 136
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: 返回类型用 Optional[str]，无法从类型看出“未压缩”的语义
+  why: _get_file_path_stat_and_gzip 的第三个返回值是 content coding 或 None；Optional[str] 只说明可能为空，不说明空值的含义，项目另有
+    no-optional 检查，显式 str | None 或枚举更清楚。
+tags:
+- real-pr
+- typing
+- api
+diff: "diff --git a/aiohttp/web_fileresponse.py b/aiohttp/web_fileresponse.py\n--- a/aiohttp/web_fileresponse.py\n\
+  +++ b/aiohttp/web_fileresponse.py\n@@ -122,6 +132,5 @@\n         return await super().prepare(request)\n\
+  \ \n     def _get_file_path_stat_and_gzip(\n-        self, check_for_gzipped_file: bool\n-    ) -> Tuple[pathlib.Path,\
+  \ os.stat_result, bool]:\n-        \"\"\"Return the file path, stat result, and gzip status.\n+    \
+  \    self, accept_encoding: str\n+    ) -> Tuple[pathlib.Path, os.stat_result, Optional[str]]:\n"
+strictness: nit

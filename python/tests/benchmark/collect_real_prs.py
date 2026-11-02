@@ -13,11 +13,23 @@ driving the benchmark) reads each draft, and only then fills ``expect`` and
 promotes it into ``cases/`` with ``kind`` / ``category`` / ``severity`` /
 ``summary`` / ``why``.
 
+The reviewed code is the code **as it was when the human wrote the comment**,
+not the PR's final diff: a maintainer can comment on an intermediate commit
+whose defect a later commit already fixed. For every comment the default is
+therefore the diff of ``original_commit_id`` (the commit the comment was made
+on), applied to that commit's parent. When that commit does not touch the
+commented file — reviewers often comment on a file from an earlier push — the
+comment's own ``diff_hunk`` is used as a minimal fallback diff, applied to the
+PR base. ``--final-diff`` restores the old PR-head slicing.
+
 Usage::
 
     # 3 repos, up to 40 PRs each, 2 comments per PR
     python -m tests.benchmark.collect_real_prs --repo pydantic/pydantic \
         --repo encode/httpx --repo pallets/flask
+
+    # replay every PR already present in .cache/gh, without new listing calls
+    python -m tests.benchmark.collect_real_prs --from-cache
 
     # re-print the drafts of an earlier run
     python -m tests.benchmark.collect_real_prs --list
@@ -169,6 +181,16 @@ def is_bot(login: str) -> bool:
     return login.endswith("[bot]") or login in BOT_LOGINS
 
 
+def is_bot_user(payload: dict[str, Any]) -> bool:
+    """A GitHub actor is a bot if its login says so or its account type does.
+
+    ``Copilot`` (the pull-request reviewer) does not end in ``[bot]`` but has
+    ``user.type == "Bot"``; GitHub Apps all use that type.
+    """
+    user = payload.get("user") or {}
+    return is_bot(user.get("login") or "") or user.get("type") == "Bot"
+
+
 def list_prs(repo: str, limit: int) -> list[dict[str, Any]]:
     return gh_json(f"repos/{repo}/pulls?state=closed&sort=updated&direction=desc&per_page={limit}")
 
@@ -297,6 +319,177 @@ def slice_to_line(block: str, line: int) -> str:
     return "".join(prelude + [hunks[i] for i in sorted(picked)])
 
 
+def diff_covers_line(block: str, line: int) -> bool:
+    """Whether ``line`` is part of a hunk's new side (added *or* context line)."""
+    for raw in block.splitlines():
+        if raw.startswith("@@"):
+            span = _new_range(raw)
+            if span and span[0] <= line <= span[1]:
+                return True
+    return False
+
+
+def patch_block(path: str, entry: dict[str, Any]) -> str:
+    """Reassemble a single-file diff from ``commits/{sha}``'s ``files[].patch``.
+
+    The commit API returns hunks without the ``diff --git`` preamble, so it has
+    to be rebuilt before ``git apply`` accepts the block.
+    """
+    patch = (entry.get("patch") or "").rstrip("\n")
+    if not patch:
+        return ""
+    status = entry.get("status")
+    if status == "added":
+        head = f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n"
+    elif status == "modified":
+        head = f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+    else:  # renamed/removed entries cannot be applied to the parent path we keep
+        return ""
+    return head + patch + "\n"
+
+
+def normalize_hunk(hunk: str) -> str:
+    """Rewrite a hunk's line counts to match its actual body.
+
+    GitHub's ``diff_hunk`` is the reviewer's hunk as it was at comment time, but
+    it is truncated to a fixed size while the header keeps the full counts.
+    ``git apply`` rejects such a block, so the counts are recomputed from the
+    lines that are actually present.
+    """
+    lines = hunk.rstrip("\n").splitlines()
+    match = HUNK_HEADER.match(lines[0]) if lines else None
+    if not match:
+        return ""
+    body = lines[1:]
+    old_count = sum(1 for line in body if not line.startswith(("+", "\\")))
+    new_count = sum(1 for line in body if not line.startswith(("-", "\\")))
+    header = f"@@ -{match.group(1)},{old_count} +{match.group(3)},{new_count} @@"
+    return "\n".join([header, *body]) + "\n"
+
+
+def hunk_is_truncated(hunk: str) -> bool:
+    """Whether GitHub cut the hunk short while keeping its declared counts."""
+    lines = hunk.rstrip("\n").splitlines()
+    match = HUNK_HEADER.match(lines[0]) if lines else None
+    if not match:
+        return True
+    body = lines[1:]
+    old_present = sum(1 for line in body if not line.startswith(("+", "\\")))
+    new_present = sum(1 for line in body if not line.startswith(("-", "\\")))
+    old_declared = int(match.group(2)) if match.group(2) is not None else 1
+    new_declared = int(match.group(4)) if match.group(4) is not None else 1
+    return (old_present, new_present) != (old_declared, new_declared)
+
+
+def hunk_block(path: str, hunk: str) -> str:
+    """Wrap one ``diff_hunk`` in a file header so it can be applied on its own."""
+    normalized = normalize_hunk(hunk)
+    if not normalized:
+        return ""
+    match = HUNK_HEADER.match(normalized.splitlines()[0])
+    if not match:  # pragma: no cover - normalize_hunk already validated it
+        return ""
+    old_start = int(match.group(1))
+    old_count = int(match.group(2))
+    if old_start == 0 and old_count == 0:
+        head = f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n"
+    else:
+        head = f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+    return head + normalized
+
+
+def line_at_position(block: str, position: int) -> int | None:
+    """New-file line at a 1-based GitHub diff ``position`` within ``block``.
+
+    ``position``/``original_position`` index the unified diff including its
+    preamble. They are the only fields that still locate an anchor when a
+    force-push changed the file and ``line`` was rewritten against the new
+    head.
+    """
+    new_line: int | None = None
+    for index, raw in enumerate(block.splitlines(), 1):
+        if raw.startswith("@@"):
+            match = HUNK_HEADER.match(raw)
+            if match:
+                new_line = int(match.group(3))
+            continue
+        if raw.startswith(("diff ", "index ", "--- ", "+++ ", "new file", "deleted file")):
+            continue
+        if raw.startswith("-"):
+            continue
+        if index == position:
+            return new_line
+        if new_line is not None:
+            new_line += 1
+    return None
+
+
+def commit_detail(repo: str, sha: str) -> dict[str, Any]:
+    """One commit, including ``parents`` and per-file ``patch`` entries."""
+    return gh_json(f"repos/{repo}/commits/{sha}")
+
+
+def comment_target(
+    repo: str, pr: dict[str, Any], comment: dict[str, Any]
+) -> tuple[str, str, int] | None:
+    """Return ``(file block, base commit, new-file line)`` for one comment.
+
+    Prefers the comment's own commit: its patch against the parent shows the
+    code the reviewer actually saw. When the commit does not touch the
+    commented file (the review was made after an unrelated push), fall back to
+    the comment's ``diff_hunk`` and the PR base it was computed against.
+    """
+    path = comment["path"]
+    anchors = [comment.get("original_line"), comment.get("line")]
+    anchors = [int(a) for a in anchors if a is not None]
+    position = comment.get("original_position") or comment.get("position")
+
+    def covered(block: str) -> int | None:
+        for anchor in anchors:
+            if diff_covers_line(block, anchor):
+                return anchor
+        return None
+
+    hunk = comment.get("diff_hunk") or ""
+    hunk_side = hunk_block(path, hunk) if hunk.startswith("@@") else ""
+    hunk_line = covered(hunk_side) if hunk_side else None
+
+    commit_block = ""
+    commit_base = ""
+    if comment.get("original_commit_id"):
+        sha = comment["original_commit_id"]
+    else:
+        sha = comment.get("commit_id")
+    if sha:
+        try:
+            commit = commit_detail(repo, sha)
+        except RuntimeError as exc:  # force-pushed-away commit, rate limit, ...
+            print(f"  {repo}@{sha[:10]}: {exc}", file=sys.stderr)
+        else:
+            entry = next((f for f in commit.get("files") or [] if f.get("filename") == path), None)
+            parents = commit.get("parents") or []
+            if entry and parents and entry.get("patch"):
+                commit_block = patch_block(path, entry)
+                commit_base = parents[0]["sha"]
+                commit_line = covered(commit_block) if commit_block else None
+                if commit_line is not None:
+                    return commit_block, commit_base, commit_line
+
+    if hunk_line is not None:
+        return hunk_side, pr["base"]["sha"], hunk_line
+
+    if commit_block and position:
+        mapped = line_at_position(commit_block, int(position))
+        if mapped is not None and diff_covers_line(commit_block, mapped):
+            return commit_block, commit_base, mapped
+
+    if hunk_side and position and not hunk_is_truncated(hunk):
+        mapped = line_at_position(hunk_side, int(position))
+        if mapped is not None and diff_covers_line(hunk_side, mapped):
+            return hunk_side, pr["base"]["sha"], mapped
+    return None
+
+
 def pr_is_candidate(pr: dict[str, Any], max_files: int, max_lines: int) -> bool:
     """A case reviews *one* file block, so PR size is advisory, not a filter.
 
@@ -306,7 +499,7 @@ def pr_is_candidate(pr: dict[str, Any], max_files: int, max_lines: int) -> bool:
     if not pr.get("merged_at"):
         return False
     author = login_of(pr)
-    if not author or is_bot(author):
+    if not author or is_bot_user(pr):
         return False
     changed = pr.get("changed_files") or 0
     touched = (pr.get("additions") or 0) + (pr.get("deletions") or 0)
@@ -322,9 +515,7 @@ def shortlist(
 ) -> list[dict]:
     """Pick merged, human, right-sized PRs, fetching details only as needed."""
     picked: list[dict[str, Any]] = []
-    listing = (
-        search_prs(repo, min_comments, limit) if min_comments else list_prs(repo, limit)
-    )
+    listing = search_prs(repo, min_comments, limit) if min_comments else list_prs(repo, limit)
     for pr in listing:
         try:
             detail = pr_detail(repo, pr["number"])
@@ -347,7 +538,7 @@ MAINTAINER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 def comment_is_candidate(comment: dict[str, Any], pr_author: str) -> bool:
     """Keep top-level, non-author, line-anchored comments that say something."""
     author = login_of(comment)
-    if not author or is_bot(author) or author == pr_author:
+    if not author or is_bot_user(comment) or author == pr_author:
         return False
     if comment.get("subject_type") != "line" or comment.get("in_reply_to_id"):
         return False
@@ -373,7 +564,14 @@ def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def make_draft(repo: str, pr: dict[str, Any], comment: dict[str, Any], diff: str) -> dict[str, Any]:
+def make_draft(
+    repo: str,
+    pr: dict[str, Any],
+    comment: dict[str, Any],
+    diff: str,
+    base_commit: str,
+    line: int,
+) -> dict[str, Any]:
     owner, name = repo.split("/", 1)
     path = comment["path"]
     stem = slugify(Path(path).stem)[:24]
@@ -385,7 +583,7 @@ def make_draft(repo: str, pr: dict[str, Any], comment: dict[str, Any], diff: str
         "origin": "real-pr",
         "language": "python",
         "repo": repo,
-        "base_commit": pr["base"]["sha"],
+        "base_commit": base_commit,
         "pr": pr["number"],
         "pr_title": pr["title"],
         "review_comment": {
@@ -396,7 +594,7 @@ def make_draft(repo: str, pr: dict[str, Any], comment: dict[str, Any], diff: str
         "file": path,
         "expect": {
             "file": path,
-            "line": comment["line"],
+            "line": line,
             "line_tolerance": 3,
             # Filled during curation; drafts are not runnable cases.
             "category": "TODO",
@@ -409,6 +607,79 @@ def make_draft(repo: str, pr: dict[str, Any], comment: dict[str, Any], diff: str
     }
 
 
+def collect_pr(
+    repo: str,
+    pr: dict[str, Any],
+    per_pr: int,
+    max_block_lines: int,
+    final_diff: bool,
+) -> list[Path]:
+    """Write comment-time drafts (or PR-head drafts with ``final_diff``) for one PR."""
+    number = pr["number"]
+    try:
+        comments = list_comments(repo, number)
+    except RuntimeError as exc:  # noqa: BLE001
+        print(f"  #{number}: {exc}", file=sys.stderr)
+        return []
+    usable = [c for c in comments if comment_is_candidate(c, login_of(pr))]
+    usable.sort(
+        key=lambda c: defect_score(c.get("body") or "", c.get("author_association") or ""),
+        reverse=True,
+    )
+    usable = [
+        c
+        for c in usable
+        if defect_score(c.get("body") or "", c.get("author_association") or "") >= 1
+    ][:per_pr]
+    if not usable:
+        return []
+
+    blocks: dict[str, str] = {}
+    if final_diff:
+        try:
+            diff = pr_diff(repo, number)
+        except RuntimeError as exc:  # noqa: BLE001
+            print(f"  #{number}: {exc}", file=sys.stderr)
+            return []
+        blocks = {block_path(b): b for b in diff_blocks(diff)}
+
+    written: list[Path] = []
+    for comment in usable:
+        if final_diff:
+            block = blocks.get(comment["path"])
+            line = comment.get("line")
+            if not block or line is None:
+                continue
+            target = (block, pr["base"]["sha"], int(line))
+        else:
+            target = comment_target(repo, pr, comment)
+            if target is None:
+                print(f"  no comment-time diff for {comment['path']}", file=sys.stderr)
+                continue
+        block, base_commit, line = target
+        trimmed = slice_to_line(block, line)
+        if not diff_covers_line(trimmed, line):
+            print(
+                f"  skip {comment['path']}: line {line} is outside the kept hunks", file=sys.stderr
+            )
+            continue
+        if block_changed_lines(trimmed) > max_block_lines:
+            print(
+                f"  skip {comment['path']}: block has {block_changed_lines(trimmed)} changed lines",
+                file=sys.stderr,
+            )
+            continue
+        draft = make_draft(repo, pr, comment, trimmed, base_commit, line)
+        path = DRAFTS_DIR / f"{draft['id']}.yaml"
+        path.write_text(
+            yaml.safe_dump(draft, sort_keys=False, allow_unicode=True, width=100),
+            encoding="utf-8",
+        )
+        written.append(path)
+        print(f"  draft: {path.name}", file=sys.stderr)
+    return written
+
+
 def collect(
     repos: list[str],
     max_prs: int,
@@ -418,6 +689,7 @@ def collect(
     limit: int,
     min_comments: int = 0,
     max_block_lines: int = 200,
+    final_diff: bool = False,
 ) -> list[Path]:
     written: list[Path] = []
     DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -429,53 +701,41 @@ def collect(
             continue
         print(f"{repo}: {len(candidates)} candidate PR(s)", file=sys.stderr)
         for pr in candidates:
-            try:
-                comments = list_comments(repo, pr["number"])
-            except RuntimeError as exc:  # noqa: BLE001
-                print(f"  #{pr['number']}: {exc}", file=sys.stderr)
-                continue
-            usable = [
-                c for c in comments if comment_is_candidate(c, login_of(pr))
-            ]
-            usable.sort(
-                key=lambda c: defect_score(
-                    c.get("body") or "", c.get("author_association") or ""
-                ),
-                reverse=True,
-            )
-            usable = [
-                c
-                for c in usable
-                if defect_score(c.get("body") or "", c.get("author_association") or "") >= 1
-            ][:per_pr]
-            if not usable:
-                continue
-            try:
-                diff = pr_diff(repo, pr["number"])
-            except RuntimeError as exc:  # noqa: BLE001
-                print(f"  #{pr['number']}: {exc}", file=sys.stderr)
-                continue
-            blocks = {block_path(b): b for b in diff_blocks(diff)}
-            for comment in usable:
-                block = blocks.get(comment["path"])
-                if not block:
-                    continue
-                trimmed = slice_to_line(block, int(comment["line"]))
-                if block_changed_lines(trimmed) > max_block_lines:
-                    print(
-                        f"  skip {comment['path']}: block has "
-                        f"{block_changed_lines(trimmed)} changed lines",
-                        file=sys.stderr,
-                    )
-                    continue
-                draft = make_draft(repo, pr, comment, trimmed)
-                path = DRAFTS_DIR / f"{draft['id']}.yaml"
-                path.write_text(
-                    yaml.safe_dump(draft, sort_keys=False, allow_unicode=True, width=100),
-                    encoding="utf-8",
-                )
-                written.append(path)
-                print(f"  draft: {path.name}", file=sys.stderr)
+            written.extend(collect_pr(repo, pr, per_pr, max_block_lines, final_diff))
+    return written
+
+
+def cached_prs() -> list[tuple[str, dict[str, Any]]]:
+    """Every PR detail already cached under ``.cache/gh``, with its repo name."""
+    found: list[tuple[str, dict[str, Any]]] = []
+    for path in sorted(CACHE_DIR.glob("repos_*_pulls_*.json")):
+        if not re.fullmatch(r"repos_.+_pulls_\d+\.json", path.name):
+            continue
+        detail = json.loads(path.read_text(encoding="utf-8"))
+        repo = (detail.get("base") or {}).get("repo", {}).get("full_name")
+        if repo:
+            found.append((repo, detail))
+    return found
+
+
+def collect_cached(
+    max_files: int,
+    max_lines: int,
+    per_pr: int,
+    max_block_lines: int,
+    final_diff: bool = False,
+) -> list[Path]:
+    """Replay every PR in ``.cache/gh`` so a corpus refresh costs no listing calls."""
+    written: list[Path] = []
+    DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    by_repo: dict[str, int] = {}
+    for repo, pr in cached_prs():
+        if not pr_is_candidate(pr, max_files, max_lines):
+            continue
+        by_repo[repo] = by_repo.get(repo, 0) + 1
+        written.extend(collect_pr(repo, pr, per_pr, max_block_lines, final_diff))
+    for repo, count in sorted(by_repo.items()):
+        print(f"{repo}: {count} cached PR(s)", file=sys.stderr)
     return written
 
 
@@ -483,8 +743,10 @@ def list_drafts() -> int:
     for path in sorted(DRAFTS_DIR.glob("*.yaml")):
         draft = yaml.safe_load(path.read_text(encoding="utf-8"))
         comment = draft.get("review_comment", {})
-        print(f"{draft['id']}\n  {draft['repo']}#{draft['pr']} {draft['expect']['file']}:"
-              f"{draft['expect'].get('line')} by {comment.get('author')}\n  {comment.get('url')}")
+        print(
+            f"{draft['id']}\n  {draft['repo']}#{draft['pr']} {draft['expect']['file']}:"
+            f"{draft['expect'].get('line')} by {comment.get('author')}\n  {comment.get('url')}"
+        )
     return 0
 
 
@@ -512,24 +774,44 @@ def main(argv: list[str] | None = None) -> int:
         default=0,
         help="only PRs with at least this many discussion comments (uses search API)",
     )
+    parser.add_argument(
+        "--final-diff",
+        action="store_true",
+        help="slice the PR-head diff (old behaviour) instead of each comment's commit",
+    )
+    parser.add_argument(
+        "--from-cache",
+        action="store_true",
+        help="replay every PR already cached under .cache/gh, without listing calls",
+    )
     parser.add_argument("--list", action="store_true", help="print existing drafts and exit")
     args = parser.parse_args(argv)
 
     if args.list:
         return list_drafts()
-    if not args.repo:
-        parser.error("give at least one --repo, or --list")
+    if not args.repo and not args.from_cache:
+        parser.error("give at least one --repo, or --from-cache, or --list")
 
-    written = collect(
-        args.repo,
-        args.max_prs,
-        args.max_files,
-        args.max_lines,
-        args.per_pr,
-        args.limit,
-        args.min_comments,
-        args.max_block_lines,
-    )
+    if args.from_cache:
+        written = collect_cached(
+            args.max_files,
+            args.max_lines,
+            args.per_pr,
+            args.max_block_lines,
+            args.final_diff,
+        )
+    else:
+        written = collect(
+            args.repo,
+            args.max_prs,
+            args.max_files,
+            args.max_lines,
+            args.per_pr,
+            args.limit,
+            args.min_comments,
+            args.max_block_lines,
+            args.final_diff,
+        )
     print(f"\n{len(written)} draft(s) in {DRAFTS_DIR}")
     return 0
 

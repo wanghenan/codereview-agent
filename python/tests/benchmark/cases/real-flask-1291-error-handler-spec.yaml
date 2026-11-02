@@ -1,0 +1,48 @@
+id: real-flask-1291-error-handler-spec
+kind: positive
+origin: real-pr
+language: python
+repo: pallets/flask
+base_commit: 2977b776ad14d46330eb30adca987ba9e50d903a
+pr: 1291
+pr_title: Fixed and intuitivized exception handling
+review_comment:
+  author: untitaker
+  url: https://github.com/pallets/flask/pull/1291#discussion_r22427026
+  body: 'Why special-case HTTP exceptions and have a separate dict for each status code?
+
+
+    Since `self.error_handler_spec` is already backwards-incompatible (as in, code that directly modifies
+    it breaks), I think we can remove this distinction. I suppose that also eliminates the need for most
+    of the code in `_ensure_exc_class`.'
+file: flask/app.py
+expect:
+  file: flask/app.py
+  line: 1166
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: error_handler_spec 仍按 HTTP 异常/普通异常分两套 dict，_ensure_exc_class 增加分支
+  why: _register_error_handler 用 setdefault(code, {}) 再 handlers[exc_class]，HTTP 异常单独占一个 code 键；既然 error_handler_spec
+    已经被声明为不兼容直接修改，统一成按异常类索引可以删掉大部分 _ensure_exc_class 逻辑，也避免调用方处理两套结构。
+tags:
+- real-pr
+- error-handling
+- api
+diff: "diff --git a/flask/app.py b/flask/app.py\n--- a/flask/app.py\n+++ b/flask/app.py\n@@ -1139,6 +1075,23\
+  \ @@ def decorator(f):\n             return f\n         return decorator\n \n+    @staticmethod\n+ \
+  \   def _ensure_exc_class(exc_class_or_code):\n+        \"\"\"ensure that we register only exceptions\
+  \ as handler keys\"\"\"\n+        if isinstance(exc_class_or_code, integer_types):\n+            exc_class\
+  \ = default_exceptions[exc_class_or_code]\n+        elif isinstance(exc_class_or_code, type):\n+   \
+  \         exc_class = exc_class_or_code\n+        else:\n+            exc_class = type(exc_class_or_code)\n\
+  +        \n+        assert issubclass(exc_class, Exception)\n+        \n+        if issubclass(exc_class,\
+  \ HTTPException):\n+            return exc_class, exc_class.code\n+        else:\n+            return\
+  \ exc_class, None\n+    \n     @setupmethod\n     def errorhandler(self, code_or_exception):\n     \
+  \    \"\"\"A decorator that is used to register a function give a given\n@@ -1208,9 +1161,10 @@ def\
+  \ _register_error_handler(self, key, code_or_exception, f):\n                 'Handlers can only be\
+  \ registered for exception classes or HTTP error codes.'\n                 .format(code_or_exception))\n\
+  \         \n-        handlers = self.error_handler_spec.setdefault(key, ExceptionHandlerDict(self, key))\n\
+  +        exc_class, code = self._ensure_exc_class(code_or_exception)\n         \n-        handlers[code_or_exception]\
+  \ = f\n+        handlers = self.error_handler_spec.setdefault(key, {}).setdefault(code, {})\n+     \
+  \   handlers[exc_class] = f\n \n     @setupmethod\n     def template_filter(self, name=None):\n"
+strictness: design

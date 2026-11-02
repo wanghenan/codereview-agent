@@ -1,0 +1,35 @@
+id: real-drf-8532-duration-format
+kind: positive
+origin: real-pr
+language: python
+repo: encode/django-rest-framework
+base_commit: de018df2aaacb1d2d947c0cfbfaa6d08fb50557d
+pr: 8532
+pr_title: Add ability to specify output format for `DurationField`
+review_comment:
+  author: browniebroke
+  url: https://github.com/encode/django-rest-framework/pull/8532#discussion_r2263725571
+  body: "Could we default to `api_settings.DURATION_FORMAT` in the `__ini__()` and always set the `format`\
+    \ attribute? That would avoid duplicating the output_format validation here...?\r\n\r\nSomething along\
+    \ these lines:\r\n\r\n```python\r\n    def __init__(self, *, **kwargs):\r\n        self.max_value\
+    \ = kwargs.pop('max_value', None)\r\n        self.min_value = kwargs.pop('min_value', None)\r\n  \
+    \      self.format = kwargs.pop(\"format\", api_settings.DURATION_FORMAT)\r\n        if format_not_valid:\r\
+    \n            raise ValueError(...)\r\n```"
+file: rest_framework/fields.py
+expect:
+  file: rest_framework/fields.py
+  line: 1392
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: DurationField.format 只在 to_representation 里 getattr，默认值和校验逻辑分散
+  why: __init__ 不设置 self.format，to_representation 用 getattr 兜底 api_settings.DURATION_FORMAT，而另一处又校验 output_format；同一个默认值出现在两处，后续改默认或加格式校验容易漏改。
+tags:
+- real-pr
+- api
+- duration
+diff: "diff --git a/rest_framework/fields.py b/rest_framework/fields.py\n--- a/rest_framework/fields.py\n\
+  +++ b/rest_framework/fields.py\n@@ -1376,4 +1389,4 @@\n         self.fail('invalid', format='[DD] [HH:[MM:]]ss[.uuuuuu]')\n\
+  \ \n     def to_representation(self, value):\n-        return duration_string(value)\n+        output_format\
+  \ = getattr(self, 'format', api_settings.DURATION_FORMAT)\n"
+strictness: design

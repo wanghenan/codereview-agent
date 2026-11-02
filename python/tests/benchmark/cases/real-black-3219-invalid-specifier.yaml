@@ -1,0 +1,52 @@
+kind: positive
+origin: real-pr
+language: python
+repo: psf/black
+base_commit: 50ce4f0a085c6254df7df92c76cbe68e6161cca4
+pr: 3219
+pr_title: Infer target version based on project metadata
+review_comment:
+  author: ichard26
+  url: https://github.com/psf/black/pull/3219#discussion_r996212469
+  body: "Black will blow up with `Error: Could not open file '/home/ichard26/programming/oss/black/pyproject.toml':\
+    \ Error reading configuration file: Invalid version: 'a'` if you set a specifier set that has an invalid\
+    \ specifier version (eg. `>=3.7,!=a`).\r\n\r\nGiven the defensive style of the rest of the logic,\
+    \ it's probably best to return None if `InvalidVersion` is raised here. The other option is to only\
+    \ ignore invalid specifiers by catching `InvalidVersion` in `strip_specifier_set`'s loop."
+file: src/black/files.py
+diff: "diff --git a/src/black/files.py b/src/black/files.py\n--- a/src/black/files.py\n+++ b/src/black/files.py\n\
+  @@ -187,10 +187,10 @@ def parse_req_python_specifier(requires_python: str) -> Optional[TargetVersion]:\n\
+  \     If parsing fails, will raise a packaging.specifiers.InvalidSpecifier error.\n     If the parsed\
+  \ specifier cannot be mapped to a valid TargetVersion, returns None.\n     \"\"\"\n-    if not requires_python:\n\
+  -        return None\n+    specifier_set = strip_specifier_set(SpecifierSet(requires_python))\n \n-\
+  \    specifier_set = SpecifierSet(requires_python)\n+    if not specifier_set:\n+        return None\n\
+  \ \n     target_version_map = {f\"3.{v.value}\": v for v in TargetVersion}\n     compatible_versions\
+  \ = specifier_set.filter(target_version_map)\n@@ -200,6 +200,36 @@ def parse_req_python_specifier(requires_python:\
+  \ str) -> Optional[TargetVersion]:\n     return None\n \n \n+def strip_specifier_set(specifier_set:\
+  \ SpecifierSet) -> SpecifierSet:\n+    \"\"\"Strip irrelevant parts of the specifier set.\n+\n+    Drops\
+  \ some specifiers, and strips minor versions for some others.\n+\n+    For background on version specifiers,\
+  \ see PEP 440:\n+    https://peps.python.org/pep-0440/#version-specifiers\n+    \"\"\"\n+    specifiers\
+  \ = []\n+    for s in specifier_set:\n+        if \"*\" in str(s):\n+            specifiers.append(s)\n\
+  +        elif s.operator in [\"~=\", \"==\", \">=\", \"===\"]:\n+            version = Version(s.version)\n\
+  +            stripped = Specifier(f\"{s.operator}{version.major}.{version.minor}\")\n+            specifiers.append(stripped)\n\
+  +        elif s.operator == \">\":\n+            version = Version(s.version)\n+            if len(version.release)\
+  \ > 2:\n+                s = Specifier(f\">={version.major}.{version.minor}\")\n+            specifiers.append(s)\n\
+  +        else:\n+            specifiers.append(s)\n+\n+    if all(s.operator in [\"<=\", \"<\"] for\
+  \ s in specifiers):\n+        specifiers = []\n+\n+    return SpecifierSet(\",\".join(str(s) for s in\
+  \ specifiers))\n+\n+\n @lru_cache()\n def find_user_pyproject_toml() -> Path:\n     r\"\"\"Return the\
+  \ path to the top-level user configuration for black.\n"
+id: real-black-3219-invalid-specifier
+strictness: defect
+expect:
+  file: src/black/files.py
+  line: 216
+  line_tolerance: 3
+  category: bug
+  severity: medium
+  summary: strip_specifier_set 解析非法版本时抛 InvalidVersion，调用方只捕获 InvalidSpecifier
+  why: requires-python 出现非法版本（如 !=a）时 SpecifierSet 仍能构造，strip_specifier_set 里的 Version(s.version) 抛 InvalidVersion；parse_req_python
+    只捕获 InvalidSpecifier，异常逃逸，Black 读取 pyproject 时直接崩溃。
+tags:
+- real-pr
+- specifier
+- crash

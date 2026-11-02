@@ -1,0 +1,50 @@
+id: real-django-18056-aggregate-null
+kind: positive
+origin: real-pr
+language: python
+repo: django/django
+base_commit: a5bc0cfd35c50d3446215c0674e60786d9e498d1
+pr: 18056
+pr_title: 'Fixed #373 -- Added CompositePrimaryKey.'
+review_comment:
+  author: charettes
+  url: https://github.com/django/django/pull/18056#discussion_r1841219548
+  body: "Just a small note that if we add support for composite fields in the future and they rely on\
+    \ `ColPairs` as well this code will break as there might `NULL` in there.\r\n\r\nThis currently only\
+    \ works because all cols of a `CompositePrimaryKey` which has references to it turned into `ColPairs`\
+    \ must be `NOT NULL` so counting one member of the composite is equivalent to counting all of them\
+    \ (remember the SQL `COUNT` function returns the number of non-NULL values)\r\n\r\nTo support non-primary\
+    \ key composite fields this would require doing\r\n\r\n```python\r\ncols = expr.get_cols()\r\ncols_filter\
+    \ = result.filter\r\nfor col in cols[1:]:\r\n   cols_filter &= Q(IsNull(col, False))\r\nreturn Count(cols[0],\
+    \ filter=composite_filter)\r\n```\r\n\r\nI guess we could also only do it if columns are potentially\
+    \ `NULL` today which would keep the optimization around when unnecessary\r\n\r\n```python\r\ncols\
+    \ = expr.get_cols()\r\ncols_filter = result.filter\r\nfor col in cols[1:]:\r\n   if col.output_field.null:\r\
+    \n       cols_filter &= Q(IsNull(col, False))\r\nreturn Count(cols[0], filter=composite_filter)\r\n\
+    ```\r\n\r\nBut there would be no way to test it until non-primary key composite field support lands.\r\
+    \n\r\nLast interesting note on the subject, [recent versions of Postgres elide `IS NULL` and `IS NOT\
+    \ NULL` when possible](https://www.postgresql.org/docs/release/17.0/)\r\n\r\n- https://git.postgresql.org/gitweb/?p=postgresql.git;a=commitdiff;h=b262ad440\r\
+    \n- https://git.postgresql.org/gitweb/?p=postgresql.git;a=commitdiff;h=3af704098"
+file: django/db/models/aggregates.py
+expect:
+  file: django/db/models/aggregates.py
+  line: 190
+  line_tolerance: 3
+  category: maintainability
+  severity: low
+  summary: Count 对 ColPairs 只取第一列，非主键复合字段可为 NULL 时会少计数
+  why: resolve_expression 对 ColPairs 直接 Count(cols[0])；当前 CompositePrimaryKey 的列都 NOT NULL 才等价，未来非主键复合字段允许
+    NULL 时，COUNT 会漏掉第一列为 NULL 的整行记录。
+tags:
+- real-pr
+- orm
+- aggregate
+diff: "diff --git a/django/db/models/aggregates.py b/django/db/models/aggregates.py\n--- a/django/db/models/aggregates.py\n\
+  +++ b/django/db/models/aggregates.py\n@@ -174,3 +175,16 @@\n             raise ValueError(\"Star cannot\
+  \ be used with filter. Please specify a field.\")\n         super().__init__(expression, filter=filter,\
+  \ **extra)\n \n+    def resolve_expression(self, *args, **kwargs):\n+        result = super().resolve_expression(*args,\
+  \ **kwargs)\n+        expr = result.source_expressions[0]\n+\n+        # In case of composite primary\
+  \ keys, count the first column.\n+        if isinstance(expr, ColPairs):\n+            if self.distinct:\n\
+  +                raise NotSupportedError(\n+                    \"COUNT(DISTINCT) doesn't support composite\
+  \ primary keys\"\n+                )\n+\n+            cols = expr.get_cols()\n+            return Count(cols[0],\
+  \ filter=result.filter)\n"
+strictness: design

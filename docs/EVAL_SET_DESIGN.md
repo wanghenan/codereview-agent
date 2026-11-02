@@ -280,7 +280,7 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 
 顺带修掉一个基准自身的错误：`cross_file` 里记录的调用方行号是早期版本的行号，S5 接线后代码下移了 20–30 行，导致"模型说对了却判错"。刷新元数据后，模型此前输出的 `1084 / 1242 / 661 / 228` 全部命中。**又一个尺子坏掉的例子——这次是基准数据过期。**
 
-### 真实 PR 语料（9 条，2026-11-01）
+### 真实 PR 语料（20 条，2026-11-02）
 
 前面所有数字都建立在**注入样本**上：我们照着当前代码把缺陷重新敲进去，再让模型读 diff。它能证明"看得见的问题不会漏"，但回答不了评审真正的难题——**真人 reviewer 会不会认为这里有问题**。本仓库历史 PR 没有实质人工 review，所以语料取自公开仓库。
 
@@ -288,6 +288,7 @@ cd python && .venv/bin/python tests/benchmark/bench.py --all --config ../.codere
 
 ```bash
 python tests/benchmark/collect_real_prs.py --repo django/django --min-comments 10 --max-prs 8
+python tests/benchmark/collect_real_prs.py --from-cache   # 重放 .cache/gh 里已有的 PR
 python tests/benchmark/collect_real_prs.py --list          # 回看已抓的草稿
 ```
 
@@ -302,7 +303,7 @@ python tests/benchmark/collect_real_prs.py --list          # 回看已抓的草�
 ```yaml
 origin: real-pr
 repo: django/django
-base_commit: d44ee518c4…      # PR 的 base sha
+base_commit: d44ee518c4…      # 评论所在提交的父提交（--final-diff 时仍是 PR base）
 pr: 15687
 strictness: defect            # defect=具体故障 / design=设计或语义缺陷 / nit=API 细节
 review_comment: {author: bluetech, url: "…discussion_r1161316259", body: "…"}
@@ -312,10 +313,10 @@ review_comment: {author: bluetech, url: "…discussion_r1161316259", body: "…"
 
 ```bash
 python tests/benchmark/bench.py --all --origin real-pr --config <bench.yaml> --out reports/real-pr-8.md
-python tests/benchmark/bench.py --validate --origin real-pr     # 校验 9 条 diff 都能应用到 base
+python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 diff 都能应用到 base
 ```
 
-**语料（9 条，6 个仓库）**
+**语料（20 条，9 个仓库）**
 
 | 用例 | 位置 | 类别 | strictness |
 |---|---|---|---|
@@ -328,6 +329,19 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 9 条 d
 | `real-aiohttp-cause-without-traceback` | aiohttp#8089 `helpers.py:830` | maintainability/low | design |
 | `real-requests-timedcache-keyerror` | requests#3885 `structures.py:169` | maintainability/low | nit |
 | `real-django-migrate-install-error-swallowed` | django#376 `migrate.py:239` | bug/medium | defect |
+| `real-black-3219-invalid-specifier` | black#3219 `files.py:216` | bug/medium | defect |
+| `real-flask-3412-asgiref-import` | flask#3412 `helpers.py:15` | bug/medium | defect |
+| `real-black-2357-token-loop` | black#2357 `handle_ipynb_magics.py:135` | bug/low | defect |
+| `real-django-9622-cot-precision` | django#9622 `sqlite3/base.py:185` | bug/low | defect |
+| `real-aiohttp-9732-middleware-default` | aiohttp#9732 `client.py:458` | maintainability/low | design |
+| `real-aiohttp-9732-redundant-check` | aiohttp#9732 `client_middlewares.py:31` | maintainability/low | nit |
+| `real-drf-8532-duration-format` | drf#8532 `fields.py:1392` | maintainability/low | design |
+| `real-flask-1291-error-handler-spec` | flask#1291 `app.py:1166` | maintainability/low | design |
+| `real-aiohttp-8063-optional-type` | aiohttp#8063 `web_fileresponse.py:136` | maintainability/low | nit |
+| `real-django-18056-aggregate-null` | django#18056 `aggregates.py:190` | maintainability/low | design |
+| `real-redis-1660-cluster-wait` | redis#1660 `conftest.py:80` | maintainability/low | design |
+
+> 2026-11-02 扩到 20 条；下面「结果」里的 `2/8`、`5/8` 是 8 条/9 条时的历史实测，本轮没有重跑，保持原样。新增的 11 条里 `defect` 为 4 条，全语料 `defect` 共 9 条——缓存里剩下的候选要么是过程性/风格意见，要么评论时的证据不在切片内，没有为了凑 `defect ≥ 10` 而升级严重度。
 
 **结果（deepseek-chat，单文件切片，上下文开）**
 
@@ -348,9 +362,28 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 9 条 d
 3. 自建规则层误报：SQL 注入规则把 docstring 里的 "executed" 当成 SQL（`if task_func_args[0] != "context"` 那条的实际原因是规则命中了附近的文档字符串），且 finding 行号取自拼接后的新增行下标而非新文件真实行号，行内评论会贴到错误位置。→ 收紧 `OWASP-A01-003` 至真实 SQL 调用点，`detect_in_diff()` 解析 hunk 头映射新文件行号（**已修**：#34 / PR #36）。
 4. finding 锚在块首而非出错行：drf 那条最准的 finding 报在 343 行，人类评论在 352 行（Δ9）。行内评论会贴错位置，行号指标也把它判成 miss（**未修**）。
 
+#### 切片基准：最终 diff ≠ 评论时 diff（2026-11-02）
+
+上一轮把 43 条草稿对照 **PR 最终 diff** 逐条核，结论是 0 条可晋升；这不是语料差，是尺子切错了地方。真人评论锚在**某个中间提交**上，PR 最终 diff 是另一棵树：
+
+- black#3219：评论时 `strip_specifier_set` 还没有 `except (InvalidSpecifier, InvalidVersion)`，最终代码已补上；
+- flask#3412：评论时 `asgiref` 在模块顶部导入（最终改成 `run_async` 内延迟导入 + extras）；
+- urllib3#5330：评论时 `Retry.from_int(retries, redirect=redirect)` 没有 `default=response.retries`，最终加了该参数。
+
+采集器现在的默认行为（`collect_real_prs.py`）：
+
+1. 用评论的 `original_commit_id`（没有则 `commit_id`）取 `GET /repos/{repo}/commits/{sha}` 的 `files[].patch`，只保留评论文件 + 相邻 hunk；
+2. `base_commit` 改成该提交的 `parents[0].sha`，`pr` 保留用于追溯；
+3. 提交不包含评论文件时（review 发生在后续 push 之后）用评论自带的 `diff_hunk` + 文件头拼最小 diff；`diff_hunk` 被 GitHub 截断时重算 hunk 行数；
+4. `--final-diff` 保留旧的 PR-head 切片，默认关闭。
+
+用 `.cache/gh/` 里的 316 个 PR 重放（`--from-cache`）产出 28 条草稿，人工按"评论当时确实有问题、能从代码本身证明"晋升 11 条（9→20）。其中 4 条是新 `defect`（black#3219 的崩溃、flask#3412 的硬依赖、black#2357 的无限循环、django#9622 的 COT 精度），其余是 design/nit。`defect` 总数 9，差目标 1 条：剩余候选大多是"加测试/拆函数/改风格"，或证据落在评论 hunk 之外（如 urllib3#5330 的 `Retry.from_int` 在评论锚点上方约 30 行），没有强行升级。
+
+**这条修正也适用于下面的"采集时踩的坑 #1"**：确认缺陷是否还在，要对照**评论所在提交**的代码，而不是最终 diff。
+
 **采集时踩的坑（都是"语料本身会撒谎"）**
 
-1. 评论可能已被后续提交修掉：django#18056 已加 `field.generated` 检查、redis#1660 已在循环后 raise。**必须对照最终 diff 逐条确认缺陷仍在**。
+1. 评论可能已被后续提交修掉：django#18056 最终已加 `field.generated` 检查、redis#1660 最终已在循环后 raise。**必须对照评论所在提交的代码逐条确认缺陷仍在**（见上一小节；2026-11-02 修正）。
 2. 过程性意见不是缺陷："add unittests"、"move this comment down"占比很高。
 3. AI reviewer 混在真人里：celery#10346/#9799 是 Copilot，pydantic#9459 是 AI 中文评审（`author_association: NONE` + 固定 emoji 前缀），按 `user.type` 与文风剔除。
 4. 证据落在切片外：pip#5952 的矛盾点在 `handle_401`，而评论锚在 `_get_new_credentials`——案例对模型不公平，弃用。

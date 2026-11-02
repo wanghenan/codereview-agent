@@ -65,15 +65,24 @@ def validate(case: dict[str, Any]) -> str | None:
     half-finished local refactor cannot invalidate the benchmark. Real-PR cases
     are checked against the extracted upstream commit, where there is no index
     and the working tree *is* the base.
+
+    ``.repos/`` sits inside this repository, so ``git apply`` has to be told
+    not to use the surrounding checkout, otherwise it skips every path as
+    foreign to the repo root. Real-PR diffs are also single-file slices whose
+    hunks may end at the commented line without trailing context; the upstream
+    comment's ``diff_hunk`` is truncated that way, so ``--unidiff-zero`` keeps
+    the line-number check meaningful.
     """
     checkout = real_pr.case_checkout(case)
+    env = None
     if checkout is not None:
-        cmd = ["git", "apply", "--check", "-"]
+        cmd = ["git", "apply", "--check", "--unidiff-zero", "-"]
         cwd = checkout
+        env = {**os.environ, "GIT_DIR": str(checkout / ".no-git-dir")}
     else:
         cmd = ["git", "apply", "--check", "--cached", "-"]
         cwd = REPO_ROOT
-    proc = subprocess.run(cmd, cwd=cwd, input=case["diff"], capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=cwd, input=case["diff"], capture_output=True, text=True, env=env)
     if proc.returncode == 0:
         return None
     return proc.stderr.strip().splitlines()[0] if proc.stderr.strip() else "git apply failed"
