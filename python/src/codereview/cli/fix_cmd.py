@@ -7,8 +7,8 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from codereview.agents import ReviewOrchestrator
 from codereview.cli.console import (
