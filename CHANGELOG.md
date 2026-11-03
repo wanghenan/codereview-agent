@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-03
+
 ### Fixed
 - A failed review no longer retries failures that cannot succeed. Auth (401/403), quota (402) and bad-request (400/404/422) errors stop after one attempt instead of burning three calls and three seconds of backoff per file; timeouts, 5xx and unknown errors still retry, and an unparseable answer retries with an explicit "single JSON object, no prose" instruction. The degraded result now names the class, e.g. `Review failed after 1 attempt (auth): ...`.
+- External tool findings are limited to the lines the diff actually changes. A one-line change to a large file used to report every pre-existing lint hit in that file (52 ruff findings on a single-line change to `aiohttp/client.py`); those cannot even be attached as inline comments. An added file still reports any line, and findings without a line are dropped.
+
+### Added
+- `CODEREVIEW_DUMP_LLM_RAW=<dir>` keeps the raw text of an answer that could not be parsed as JSON, which the retry loop would otherwise overwrite. Off unless the variable is set.
 
 ## [1.3.3] - 2026-11-03
 
