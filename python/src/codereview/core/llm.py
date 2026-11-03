@@ -111,7 +111,11 @@ class LLMFactory:
             return headers
         if any(name.lower() == "x-api-key" for name in headers):
             return headers
-        headers["x-api-key"] = config.api_key
+        # Canonical casing matters: the 0.x SDK already sends `X-Api-Key` from
+        # the api_key argument, and a second differently-cased copy is sent as a
+        # duplicate header (the gateway rejects it as an invalid credential).
+        # Using the SDK's casing makes this an override instead of an addition.
+        headers["X-Api-Key"] = config.api_key
         return headers
 
     @classmethod
