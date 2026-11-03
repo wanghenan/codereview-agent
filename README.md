@@ -193,10 +193,18 @@ python -m codereview.cli merge --pr 123 --force
 
 ```yaml
 llm:
-  provider: minimax  # 支持: openai, anthropic, zhipu, minimax, qwen, deepseek
+  provider: anthropic              # 网关走 Anthropic 兼容协议
   apiKey: ${LLM_API_KEY}
-  model: abab6.5s-chat
+  baseUrl: https://opencode.ai/zen/go
+  model: deepseek-v4.1-flash
+  maxTokens: 16000                 # 推理模型会先花预算在 thinking 上
+  headers:
+    x-opencode-session: 00000000-0000-4000-8000-000000000000  # 任意 UUID，网关用来路由
 ```
+
+> 换用官方 provider（`openai` / `anthropic` / `deepseek` / `zhipu` / `qwen` / `minimax`）时，去掉
+> `baseUrl` 与 `headers` 即可，例如 `provider: deepseek` + `model: deepseek-chat`。全部字段见
+> [docs/configuration.md](docs/configuration.md)。
 
 ### 第二步：添加 GitHub Action
 
@@ -210,8 +218,8 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: wanghenan/codereview-agent@v1
+      - uses: actions/checkout@v6
+      - uses: wanghenan/codereview-agent@v1   # 跟随最新的 1.x
         with:
           config: .codereview-agent.yaml
         env:
