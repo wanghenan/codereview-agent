@@ -193,17 +193,12 @@ python -m codereview.cli merge --pr 123 --force
 
 ```yaml
 llm:
-  provider: anthropic              # 网关走 Anthropic 兼容协议
+  provider: opencode-go      # 推荐：默认模型 deepseek-v4.1-flash
   apiKey: ${LLM_API_KEY}
-  baseUrl: https://opencode.ai/zen/go
-  model: deepseek-v4.1-flash
-  maxTokens: 16000                 # 推理模型会先花预算在 thinking 上
-  headers:
-    x-opencode-session: 00000000-0000-4000-8000-000000000000  # 任意 UUID，网关用来路由
 ```
 
-> 换用官方 provider（`openai` / `anthropic` / `deepseek` / `zhipu` / `qwen` / `minimax`）时，去掉
-> `baseUrl` 与 `headers` 即可，例如 `provider: deepseek` + `model: deepseek-chat`。全部字段见
+> 也可以直接用官方 provider（`openai` / `anthropic` / `deepseek` / `zhipu` / `qwen` / `minimax`），
+> 例如 `provider: deepseek` + `model: deepseek-chat`。各家族当前推荐的最新 flash 模型见
 > [docs/configuration.md](docs/configuration.md)。
 
 ### 第二步：添加 GitHub Action

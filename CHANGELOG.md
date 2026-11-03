@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-03
+
+### Added
+- `provider: opencode-go` is a first-class provider instead of "anthropic plus a custom baseUrl". It supplies the endpoint, defaults to `deepseek-v4.1-flash`, and generates the routing header the gateway requires, so the whole configuration is `provider` plus `apiKey`. Official providers are unchanged and keep their own defaults.
+
+### Fixed
+- The built package shipped an empty long description: `readme = "README.md"` pointed at `python/README.md`, which did not exist. The wheel now carries a package-level README.
+
 ### Changed
+- The configuration reference lists each family's newest flash-tier model (verified against the gateway catalogue on 2026-11-03) and marks `deepseek-v4.1-flash` as the recommendation.
 - The benchmark now runs on `opencode-go` / `deepseek-v4.1-flash` (the provider the corpus was measured on) and `baseline.json` is refreshed to `real_pr` 12/20 and `injected` 30/30, with the nightly gate at `--tolerance 2` to absorb sampling noise. The gate had been skipped every night because its `DEEPSEEK_API_KEY` secret was never configured.
 - The README quickstart uses `deepseek-v4.1-flash`, and the floating `v1` tag now points at the latest 1.x. It pointed at v1.0.0, so following the documented Action installed a CLI without `--version`, `--list-rules` or `--offline`.
 

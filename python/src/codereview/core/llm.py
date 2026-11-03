@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Optional
 
 from langchain_anthropic import ChatAnthropic
@@ -24,6 +25,9 @@ class LLMFactory:
         LLMProvider.MINIMAX: "abab6.5s-chat",
         LLMProvider.QWEN: "qwen-plus",
         LLMProvider.DEEPSEEK: "deepseek-chat",
+        # The recommended model for the gateway: the newest DeepSeek flash,
+        # which is what the benchmark corpus is measured on.
+        LLMProvider.OPENCODE_GO: "deepseek-v4.1-flash",
     }
 
     # Base URLs for compatible APIs
@@ -32,6 +36,7 @@ class LLMFactory:
         LLMProvider.MINIMAX: "https://api.minimax.chat/v1",
         LLMProvider.QWEN: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         LLMProvider.DEEPSEEK: "https://api.deepseek.com/v1",
+        LLMProvider.OPENCODE_GO: "https://opencode.ai/zen/go",
     }
 
     @classmethod
@@ -48,7 +53,7 @@ class LLMFactory:
 
         if config.provider == LLMProvider.OPENAI:
             return cls._create_openai(config, model)
-        elif config.provider == LLMProvider.ANTHROPIC:
+        elif config.provider in (LLMProvider.ANTHROPIC, LLMProvider.OPENCODE_GO):
             return cls._create_anthropic(config, model)
         elif config.provider in (
             LLMProvider.ZHIPU,
@@ -107,7 +112,14 @@ class LLMFactory:
         nothing.
         """
         headers = dict(config.headers)
-        if not config.base_url or not config.api_key:
+        is_gateway = config.provider == LLMProvider.OPENCODE_GO
+        if is_gateway and not any(
+            name.lower() == "x-opencode-session" for name in headers
+        ):
+            # The gateway routes on this header and rejects a request without
+            # it, but it does not validate the value: any UUID is accepted.
+            headers["x-opencode-session"] = str(uuid.uuid4())
+        if not (config.base_url or is_gateway) or not config.api_key:
             return headers
         if any(name.lower() == "x-api-key" for name in headers):
             return headers
@@ -125,7 +137,11 @@ class LLMFactory:
         return ChatAnthropic(
             model=model,
             anthropic_api_key=config.api_key,
-            base_url=config.base_url or "https://api.anthropic.com",
+            base_url=(
+                config.base_url
+                or cls.BASE_URLS.get(config.provider)
+                or "https://api.anthropic.com"
+            ),
             temperature=config.temperature,
             **({"default_headers": headers} if headers else {}),
             **cls._limit_kwargs(config),

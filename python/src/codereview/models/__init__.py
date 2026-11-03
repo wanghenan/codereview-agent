@@ -25,6 +25,10 @@ class LLMProvider(str, Enum):
     MINIMAX = "minimax"
     QWEN = "qwen"
     DEEPSEEK = "deepseek"
+    #: opencode-go gateway (Anthropic-compatible). A provider rather than a
+    #: custom `baseUrl` so the endpoint, its default model and the routing
+    #: header are one decision instead of three.
+    OPENCODE_GO = "opencode-go"
 
 
 class MergeMethod(str, Enum):

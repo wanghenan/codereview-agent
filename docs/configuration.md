@@ -89,19 +89,25 @@ output:
 | `minimax` | MiniMax 系列 |
 | `qwen` | 阿里云通义千问 |
 | `deepseek` | DeepSeek 系列 |
+| `opencode-go` | opencode Go 网关（Anthropic 兼容；免填 baseUrl 与 header） |
 
 ### model
 
 各 Provider 推荐模型：
 
-| Provider | 推荐模型 |
-|----------|----------|
-| OpenAI | gpt-4o, gpt-5, gpt-5.2 |
-| Anthropic | claude-sonnet-4.6, claude-opus-4.6 |
-| 智谱AI | glm-4-flash, glm-5 |
-| MiniMax | MiniMax-M2.5, abab6.5s-chat |
-| 阿里云 | qwen-plus, qwen3-max |
-| DeepSeek | deepseek-chat, deepseek-v3 |
+| Provider | 推荐模型（各家最新 flash 档） |
+|----------|------------------------------|
+| **opencode-go** | **`deepseek-v4.1-flash`**（默认，主推） |
+| OpenAI | `gpt-6-luna`（该家族无 flash 命名，取最新快档） |
+| Anthropic | `claude-haiku-5-5`（快档） |
+| 智谱AI | `glm-5.3-flash` |
+| MiniMax | `MiniMax-M3.1-Flash` |
+| 阿里云 | `qwen3.8-flash` |
+| DeepSeek | 网关：`deepseek-v4.1-flash`；官方端点仍用 `deepseek-chat` |
+
+上表的 ID 取自网关目录（2026-11-03 实测，`GET /v1/models`）。官方端点可用模型与网关别名不完全一致，直接用官方
+provider 时若报「模型不存在」，以该厂商文档为准。各家族还有更强的 pro/max 档（如 `deepseek-v4-pro`、
+`qwen3.8-max`、`MiniMax-M3`），本表只列 flash 档。
 
 ### baseUrl
 
@@ -126,14 +132,25 @@ llm:
 - 键名按原样发送（不会被转换成 snake_case），值的 `${VAR}` 占位符会被解析；
 - 留空或不配置时行为不变。
 
+走 opencode-go 时不需要手写这些：`provider: opencode-go` 已带好网关地址、默认模型与路由头（每次运行生成一个
+UUID，网关只把它当路由提示，不校验取值）：
+
+```yaml
+llm:
+  provider: opencode-go
+  apiKey: ${OPENCODE_GO_API_KEY}
+```
+
+只有对接其它自定义网关时才需要显式写 `baseUrl` / `headers`：
+
 ```yaml
 llm:
   provider: anthropic
-  apiKey: ${OPENCODE_GO_API_KEY}
-  baseUrl: https://opencode.ai/zen/go
-  model: deepseek-v4.1-flash
+  apiKey: ${OTHER_GATEWAY_KEY}
+  baseUrl: https://gateway.example.com/v1
+  model: some-model
   headers:
-    x-opencode-session: 00000000-0000-4000-8000-000000000000
+    x-session-id: ${SESSION_ID}
 ```
 
 
