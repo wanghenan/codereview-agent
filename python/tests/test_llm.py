@@ -280,8 +280,9 @@ class TestLLMFactory:
                 temperature=0.5,
                 # anthropic 2.x authenticates with `Authorization: Bearer`,
                 # which Anthropic-compatible gateways reject; the key is also
-                # sent as `x-api-key` for custom endpoints.
-                default_headers={"x-api-key": "test-key"},
+                # sent as `X-Api-Key` for custom endpoints. The casing matches
+                # the SDK's own header so it overrides instead of duplicating.
+                default_headers={"X-Api-Key": "test-key"},
             )
             assert result == mock_instance
 
@@ -346,7 +347,7 @@ class TestLLMFactory:
         with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
             LLMFactory.create(config)
             call_kwargs = mock_anthropic.call_args[1]
-            assert call_kwargs["default_headers"] == {**headers, "x-api-key": "test-key"}
+            assert call_kwargs["default_headers"] == {**headers, "X-Api-Key": "test-key"}
 
     def test_official_anthropic_endpoint_keeps_sdk_auth_only(self):
         """Without a custom base_url no second auth header is added."""
@@ -431,5 +432,36 @@ llm:
             LLMFactory.create(config.llm)
             assert mock_anthropic.call_args[1]["default_headers"] == {
                 **config.llm.headers,
-                "x-api-key": "resolved-token",
+                "X-Api-Key": "resolved-token",
             }
+
+    def test_anthropic_auth_headers_never_duplicate_case_insensitively(self):
+        """The 0.x SDK sends `X-Api-Key` itself.
+
+        Adding `x-api-key` (different casing) produced two headers with the same
+        name: the gateway saw an invalid credential and every review failed with
+        401. Header names are case-insensitive, so the factory must not add a
+        second copy -- whichever SDK version is installed.
+        """
+        config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go",
+            headers={"x-opencode-session": "s"},
+        )
+
+        client = LLMFactory._create_anthropic(config, "any-model")
+
+        names = [name.lower() for name in (client._client.default_headers or {})]
+        assert len(names) == len(set(names)), f"duplicate auth header: {names}"
+        assert "x-api-key" in names
+
+    def test_anthropic_uses_the_sdk_header_casing(self):
+        """`X-Api-Key` overrides the SDK's own header; `x-api-key` adds a copy."""
+        config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="test-key",
+            base_url="https://opencode.ai/zen/go",
+        )
+
+        assert LLMFactory._anthropic_headers(config) == {"X-Api-Key": "test-key"}

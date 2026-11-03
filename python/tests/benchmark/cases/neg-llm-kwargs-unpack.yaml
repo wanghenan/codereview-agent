@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/core/llm.py
 expect:
   file: python/src/codereview/core/llm.py
-  line: 213
+  line: 217
   line_tolerance: 5
   category: style
   severity: low
@@ -15,7 +15,7 @@ tags:
 - refactor
 diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
   --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
-  @@ -210,10 +210,11 @@\n                 llm = cls.create(config)\n             \
+  @@ -214,10 +214,11 @@\n                 llm = cls.create(config)\n             \
   \    if attempt == 0:\n                     # First attempt - wrap with fallback\
   \ chain\n-                    return _FallbackChainLLM(\n-                     \
   \   primary_llm=llm,\n-                        fallback_configs=all_configs[1:max_attempts],\n\
