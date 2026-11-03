@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/core/llm.py
 expect:
   file: python/src/codereview/core/llm.py
-  line: 219
+  line: 235
   line_tolerance: 5
   category: bug
   severity: medium
@@ -15,7 +15,7 @@ tags:
 - fallback
 diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
   --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
-  @@ -216,7 +216,7 @@\n                     # First attempt - wrap with fallback chain\n\
+  @@ -232,7 +232,7 @@\n                     # First attempt - wrap with fallback chain\n\
   \                     return _FallbackChainLLM(\n                         primary_llm=llm,\n\
   -                        fallback_configs=all_configs[1:max_attempts],\n+      \
   \                  fallback_configs=all_configs[1:1],\n                     )\n\
