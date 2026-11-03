@@ -85,6 +85,16 @@ jobs:
           sh -c 'test -n "$(ls python/dist/*.whl 2>/dev/null)" && echo "wheel OK"'
           sh -c 'test -n "$(ls python/dist/*.tar.gz 2>/dev/null)" && echo "sdist OK"'
 
+      - name: Smoke-test the built wheel
+        # A wheel that installs but ships no rules YAML loads 0 rules at runtime
+        # (v1.3.0 did exactly that); fail the release instead of publishing it.
+        run: |
+          python -m venv /tmp/wheel-smoke
+          /tmp/wheel-smoke/bin/pip install -q python/dist/*.whl
+          /tmp/wheel-smoke/bin/codereview --version
+          /tmp/wheel-smoke/bin/codereview --list-rules | tee /tmp/rules.txt
+          grep -q "SQL injection" /tmp/rules.txt
+
       - name: Extract version from tag
         id: version
         # Strip leading 'v' from tag (v1.2.0 -> 1.2.0) and detect prerelease

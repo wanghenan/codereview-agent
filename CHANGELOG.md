@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-03
+
+### Added
+- Benchmark reports record each finding's `evidence` and `suggestion` (both `--json-out` and the markdown table), so re-anchoring findings by their quoted code can be evaluated offline before it is built.
+
+### Fixed
+- The wheel now ships `codereview/rules/owasp_rules.yaml` via `[tool.setuptools.package-data]`. Without it the *installed* CLI loaded 0 detection rules and reported "0 rules" (v1.3.0 shipped no rules at all); path-based installs hid the bug because the YAML was on disk. The release workflow now smoke-tests the built wheel: it installs it, runs `--list-rules` and fails the release when the SQL injection rule is missing.
+
 ## [1.3.0] - 2026-11-02
 
 ### Added
