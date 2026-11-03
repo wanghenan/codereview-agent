@@ -182,7 +182,11 @@ async def test_tool_findings_are_converted_and_runner_diagnostics_are_dropped(
     )
     _stub_llm_chain(agent)
 
-    review = await agent._review_file(_entry("src/main.py"))
+    # Line 7 is the added line in this hunk: tool findings outside the diff are
+    # dropped, so the conversion test needs a finding on a changed line.
+    review = await agent._review_file(
+        _entry("src/main.py", patch="@@ -6,2 +6,3 @@\n ctx\n+new")
+    )
 
     tool_issues = [issue for issue in review.issues if issue.source == "tool"]
     assert len(tool_issues) == 1
