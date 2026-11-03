@@ -69,7 +69,10 @@ jobs:
       - name: Gate against baseline
         if: steps.key.outputs.enabled == 'true'
         working-directory: python
-        run: python tests/benchmark/gate.py --report tests/benchmark/reports/nightly.json
+        # The metric is stochastic: consecutive runs of the same model moved
+        # between 10 and 12 of 20 before tool findings were diff-scoped. A
+        # tolerance of 2 absorbs that noise; it still catches a real drop.
+        run: python tests/benchmark/gate.py --report tests/benchmark/reports/nightly.json --tolerance 2
 
       - name: Upload benchmark artifacts
         if: always() && steps.key.outputs.enabled == 'true'

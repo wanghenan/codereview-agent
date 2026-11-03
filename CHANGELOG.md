@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The benchmark now runs on `opencode-go` / `deepseek-v4.1-flash` (the provider the corpus was measured on) and `baseline.json` is refreshed to `real_pr` 12/20 and `injected` 30/30, with the nightly gate at `--tolerance 2` to absorb sampling noise. The gate had been skipped every night because its `DEEPSEEK_API_KEY` secret was never configured.
+- The README quickstart uses `deepseek-v4.1-flash`, and the floating `v1` tag now points at the latest 1.x. It pointed at v1.0.0, so following the documented Action installed a CLI without `--version`, `--list-rules` or `--offline`.
+
 ## [1.3.4] - 2026-11-03
 
 ### Fixed

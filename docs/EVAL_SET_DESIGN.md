@@ -499,14 +499,16 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 
 `finding_details` 是逐条 finding 的锚点信息（`line` / `title` / `evidence` / `suggestion`，`suggestion` 截断 200 字符），用来量"按 finding 自引用的代码片段在 patch 内重定位锚点"的可行性；`findings` 仍是条数，`gate.py` 与旧报告不需要改。
 
-**基线现状（2026-11-02）**：语料已扩到 20 条，但 `baseline.json` 里 `real_pr` 仍是 9 条（那次实测之后官方 DeepSeek 余额用尽，没法用同一模型重跑 20 条）。`gate.py` 在"报告用例数多于基线"时判失败，所以**夜间作业在基线刷新前会红**；仓库目前没配 `DEEPSEEK_API_KEY`，作业会跳过，因此不影响 CI。刷新方式：用 `deepseek-chat` 跑一次 20 条，把 `real_pr.matched` / `total` 改成实测值。2026-11-03 已有一次 20 条单轮实测（全来源 ±3 命中 11/20，见下节），但跑在 `opencode-go` 上，与基线不同源，因此没有直接采信。
+**基线现状（2026-11-03 已刷新）**：`real_pr` 从 9 条时代刷新为 **12 / 20**，`injected` 仍 30 / 30。刷新的关键是把**夜间作业与基线绑到同一份配置**：`tests/benchmark/bench.yaml` 现在指向 `opencode-go` / `deepseek-v4.1-flash`，夜间作业按其 `OPENCODE_GO_API_KEY` 决定是否运行。此前作业需要 `DEEPSEEK_API_KEY`，secret 未配置，每晚静默跳过——门禁是名义上的。
 
 `gate.py` 读取这份 JSON 与签入的 `baseline.json`，按 origin 比较正例的候选命中数；低于基线减 `--tolerance`（默认 0）即退出码 1，并打印未命中的用例名。用例数少于基线（或多于基线，说明基线该刷新）同样判失败。
 
 | 分组 | 基线 | 来源 |
 |---|---|---|
-| `real_pr` | 5 / 8 | 上面「真实 PR 语料」一轮实测（±3 行） |
-| `injected` | 30 / 30 | 24 条 S0 注入（24/24，±5 行）+ 6 条跨文件用例（6/6，±5 行） |
+| `real_pr` | **12 / 20** | 2026-11-03 全语料单轮实测（±3 行，`opencode-go` / `deepseek-v4.1-flash`） |
+| `injected` | 30 / 30 | 同轮实测（24 条 S0 注入 + 6 条跨文件用例） |
+
+夜间作业以 `--tolerance 2` 运行：同一模型连续两轮在 10–12 / 20 之间波动，不容忍的话一次采样噪声就会把作业打成红的，而容差 2 仍能抓住真实退步（人工把命中数改成 7 时门禁正确失败）。
 
 基线是各轮实测结果的组合；首次 nightly 若与实测有出入，以实际报告刷新 `baseline.json`（同时确认差异是模型噪声还是真回归）。
 
@@ -552,3 +554,45 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 - **JSON 解析失败每轮都会出现**：20 条里有 1 条三次全败、另有 6 条需要重试。重试把耗时拉长，也说明输出格式的稳定性仍是弱项。
 
 **结论**：design/nit 可达，且与 defect 同量级；`±3` 分数不宜当能力指标引用，语义人工判定仍是唯一可信口径（本轮 5/20 明确同因）。这份数据用的是 opencode-go，与 `baseline.json`（`deepseek-chat`）不同源，因此**没有**据此改基线。
+
+### 语义判定表（2026-11-03，人工逐条，20 条真实用例）
+
+候选命中只回答"同文件、行号差 ≤3"。这张表回答另一个问题：**模型说的到底是不是人评那件事**。判定分三档——同因（同一个问题）、部分（同一处代码、另一件事）、无关。
+
+| 用例 | 层 | 人评要点 | 模型最接近的一条（Δ） | 判定 |
+|---|---|---|---|---|
+| `aiohttp-8063-optional-type` | nit | `Optional` 命名不表意，项目有 no-optional 规则，应写成显式的两种类型 | 返回元组第三项从 bool 变 `Optional[str]`，下游按布尔用会误判（Δ0） | 部分 |
+| `aiohttp-9732-middleware-default` | design | 默认改成 `()`、删掉判空分支 | `ClientMiddlewareType` 未导入 / `middlewares` 全文没被读取（Δ0） | 部分 |
+| `aiohttp-9732-redundant-check` | nit | `if not middlewares` 这个判断多余 | 循环内每次新建函数对象、模块循环导入（Δ17） | 无关 |
+| `aiohttp-cause-without-traceback` | design | 直接赋 `__cause__` 没有 traceback，应 `raise from` 或搬运 traceback | 直接赋 `__cause__` 与 `raise from` 不等价，不设 `__suppress_context__`（Δ0） | **同因** |
+| `black-2357-token-loop` | defect | token 循环要加上限（如 100 次）避免死循环 | SyntaxError 无消息、惰性导入、冗余 `str()`（Δ18） | 无关 |
+| `black-3219-invalid-specifier` | defect | 非法 specifier 让 `Version()` 抛 InvalidVersion 崩溃 | `===` 允许任意字符串，传给 `Version()` 会抛（Δ0） | **同因** |
+| `django-18056-aggregate-null` | design | 复合字段若允许 NULL，`Count(cols[0])` 会漏行 | `super().resolve_expression()` 返回值是副本；`ColPairs` 未导入（Δ0/Δ7） | 无关 |
+| `django-9622-cot-precision` | defect | `1/tan` 在 π/2 附近丢精度，cos/sin 更稳 | `COT(0)` 等合法 SQL 输入抛 Python 异常（Δ0） | 部分 |
+| `django-enqueue-on-commit-single-db` | design | on_commit 绑在发起连接上，多库下会挂错库 | `bool("False")` 为真、`QUEUES` 传字符串、priority 未校验类型（Δ8） | 无关 |
+| `django-migrate-install-error-swallowed` | defect | 捕获后只写 stderr 就继续、退出码仍 0，应 re-raise | 两处 bare except 都只写 stderr，migrate 仍以成功退出（Δ24） | **同因** |
+| `django-psycopg3-tzloader` | defect | `replace(tzinfo=tz)` 只换标签不换时间点，应 `astimezone` | docstring 说 "chopped"，`load()` 实际用 `replace(tzinfo=...)`（Δ10） | 部分 |
+| `drf-8532-duration-format` | design | 在 `__init__` 设默认 `format`，避免与另一处校验重复 | `return` 被删、方法返回 None；`output_format` 成死变量（Δ0） | 部分 |
+| `drf-datetime-local-none-format` | defect | `format is None` 时还会多出一种失败 | 解析分支没判断 `field.value` 类型（Δ9）；缺 `sys`/`datetime` 导入（Δ4） | 部分 |
+| `flask-1291-error-handler-spec` | design | 统一按异常类索引，删掉按状态码的字典 | `assert` 在 `-O` 下失效、行尾空格、裸 KeyError（Δ78） | 无关 |
+| `flask-3412-asgiref-import` | defect | asgiref 改成可选导入 | 模块级导入使 asgiref 成为硬依赖且未写进 install_requires（Δ0） | **同因** |
+| `matplotlib-hist-colors-sequence` | defect | `colors=set` 与 `facecolor=None` 组合没测，要求验证 | 规范化键名后原地写回，`kwargs` 在循环里被反复改写（Δ13） | 部分 |
+| `pandas-series-extension-dtype-check` | defect | `is_dtype` 对 Categorical 恒为真，忽略 categories/ordered | 错误消息变了；`_to_embed(keep_tz=True)` 被替换（Δ0/Δ31） | 无关 |
+| `pandas-timedeltaarray-freq-no-validation` | design | `__init__` 不校验 freq，用户会以为它校验 | `self._dtype` 直接存原值，`!=` 松比较让字符串通过（Δ3） | 部分 |
+| `redis-1660-cluster-wait` | design | 等集群超时后应抛 RedisClusterException | 超时后循环正常结束、函数正常返回（Δ8） | **同因** |
+| `requests-timedcache-keyerror` | nit | 应写 `KeyError(key)` | 无锁线程不安全、淘汰时机、`__iter__` 产出 key-value（Δ1） | 无关 |
+
+| 层 | 候选命中（±3） | 同因 | 部分 | 无关 |
+|---|---|---|---|---|
+| defect | 5 / 9 | 3 | 4 | 2 |
+| design | 5 / 8 | 2 | 3 | 3 |
+| nit | 2 / 3 | 0 | 1 | 2 |
+| **合计** | **12 / 20** | **5** | **8** | **7** |
+
+三条结论：
+
+1. **候选命中把语义一致高估了约 2.4 倍**（12 vs 5）。门禁数字只能用于"有没有退步"，不能引用成"命中率"。
+2. **"部分"是最常见的一档（8/20）**：模型确实看见了同一处代码，但说的是另一件事——它证明的是"看得见"，不是"同意这位 reviewer"。
+3. **分层排序与候选口径不一致**：候选口径下 defect 与 design 都是 5，语义口径下 defect 3/9 > design 2/8 > nit 0/3。所以"design 比 defect 好"这个早先的观察在语义层面不成立。
+
+这张表是人工判读，判据是"若我是 PR 作者，看到这条评论会不会认为这就是人评提的那件事"。换人复判会有出入，尤其是"部分"与"无关"的边界。
