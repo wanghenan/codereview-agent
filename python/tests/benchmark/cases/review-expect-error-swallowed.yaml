@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/agents/reviewer.py
 expect:
   file: python/src/codereview/agents/reviewer.py
-  line: 357
+  line: 362
   line_tolerance: 5
   category: maintainability
   severity: low
@@ -15,7 +15,7 @@ tags:
 - observability
 diff: "diff --git a/python/src/codereview/agents/reviewer.py b/python/src/codereview/agents/reviewer.py\n\
   --- a/python/src/codereview/agents/reviewer.py\n+++ b/python/src/codereview/agents/reviewer.py\n\
-  @@ -354,7 +354,7 @@\n                         # to a FileReview on failure, but\
+  @@ -359,7 +359,7 @@\n                         # to a FileReview on failure, but\
   \ guard against any\n                         # exception that escapes it so one\
   \ bad file cannot\n                         # abort the whole batch.\n-        \
   \                logger.error(f\"Review task failed unexpectedly: {e}\")\n+    \

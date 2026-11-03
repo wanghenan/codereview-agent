@@ -181,6 +181,31 @@ def findings_of(result: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def split_review_failures(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Separate pipeline failures from real findings.
+
+    A review that exhausts its retries still returns a synthetic issue
+    (``REVIEW_FAILURE_PREFIX``) so the CLI can tell the user something went
+    wrong. For scoring it is not a finding: it carries no line, so
+    :func:`pair` marks it ``file-level`` and :func:`candidate_hit` counts it as
+    a candidate -- an API outage would *raise* the score and poison the
+    baseline. Return the real findings plus the failure messages.
+    """
+    from codereview.agents.reviewer import REVIEW_FAILURE_PREFIX
+
+    findings: list[dict[str, Any]] = []
+    failures: list[str] = []
+    for row in rows:
+        description = str(row.get("description") or "")
+        if description.startswith(REVIEW_FAILURE_PREFIX):
+            failures.append(description)
+        else:
+            findings.append(row)
+    return findings, failures
+
+
 def pair(case: dict[str, Any], findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Annotate findings with distance to the expected location."""
     expect = case["expect"]
@@ -347,6 +372,11 @@ def _finding_detail(row: dict[str, Any]) -> dict[str, Any]:
     """
     return {
         "line": row.get("line"),
+        # Which stage produced the finding. Tool/rule findings are not
+        # restricted to the diff, so a one-line change to a large file can emit
+        # dozens of pre-existing lint hits; without this field a report cannot
+        # tell "the model found something" from "ruff re-listed the file".
+        "source": row.get("source"),
         "title": row.get("title", ""),
         "evidence": list(row.get("evidence") or []),
         "suggestion": (row.get("suggestion") or "")[:200],
@@ -506,14 +536,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"running {case['id']} ...", file=sys.stderr)
         try:
             run = asyncio.run(run_case(case, config_path))
-            findings = pair(case, findings_of(run["result"]))
+            findings, failures = split_review_failures(findings_of(run["result"]))
+            findings = pair(case, findings)
             matched, best_delta = candidate_hit(findings)
             results.append(
                 {
                     "case": case,
                     "findings": findings,
                     "elapsed": run["elapsed"],
-                    "error": None,
+                    "error": "; ".join(failures) or None,
                     "matched": matched,
                     "best_delta": best_delta,
                 }

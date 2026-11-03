@@ -146,6 +146,7 @@ def test_json_out_includes_finding_details(tmp_path: Path) -> None:
     assert case["finding_details"] == [
         {
             "line": 12,
+            "source": "llm",
             "title": "unvalidated lookup",
             "evidence": ["key = request.args['id']"],
             "suggestion": "validate the key before the lookup",
@@ -265,3 +266,42 @@ def test_strictness_choices_match_case_values() -> None:
     declared = {case.get("strictness") for case in bench.load_cases() if case.get("strictness")}
     parser_choices = {"defect", "design", "nit"}
     assert declared <= parser_choices
+
+
+def test_split_review_failures_separates_them() -> None:
+    rows = [
+        {"description": "Review failed after 3 attempts: 401", "file": "pkg/mod.py", "line": None},
+        {"description": "real finding", "file": "pkg/mod.py", "line": 11},
+    ]
+
+    findings, failures = bench.split_review_failures(rows)
+
+    assert [f["description"] for f in findings] == ["real finding"]
+    assert failures == ["Review failed after 3 attempts: 401"]
+
+
+def test_review_failure_does_not_count_as_a_candidate_hit() -> None:
+    """An API outage must not raise the score: the failure has no line, and a
+    file-level match used to be counted as a candidate hit."""
+    case = make_result("case-a")["case"]
+    failure = {
+        "file": "pkg/mod.py",
+        "line": None,
+        "description": "Review failed after 3 attempts: 401",
+    }
+
+    findings, failures = bench.split_review_failures([failure])
+    matched, delta = bench.candidate_hit(bench.pair(case, findings))
+
+    assert failures and not matched
+    assert delta is None
+    # The failure would have been a file-level candidate had it not been split.
+    assert bench.candidate_hit(bench.pair(case, [failure]))[0] is True
+
+
+def test_finding_detail_records_source() -> None:
+    """Tool findings are not diff-scoped, so a report must be able to separate
+    them from the model's own output."""
+    row = make_finding(source="tool")
+
+    assert bench._finding_detail(row)["source"] == "tool"

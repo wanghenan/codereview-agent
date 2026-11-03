@@ -92,14 +92,38 @@ class LLMFactory:
         )
 
     @classmethod
+    def _anthropic_headers(cls, config: ConfigLLM) -> dict[str, str]:
+        """Return the headers the Anthropic client needs for this endpoint.
+
+        ``anthropic`` 2.x sends the API key as ``Authorization: Bearer <key>``.
+        Anthropic-compatible gateways (opencode.ai/zen/go, most LiteLLM-style
+        proxies) implement ``x-api-key`` instead and reject the Bearer form with
+        ``401 Go requires a credential``. Sending the key both ways is harmless:
+        a gateway prefers ``x-api-key`` (verified against opencode.ai/zen/go,
+        where a valid ``x-api-key`` still succeeds next to a bogus Bearer).
+
+        Only added for a custom ``base_url``: the official endpoint is reached
+        by the SDK's own scheme, and adding a second auth header there buys
+        nothing.
+        """
+        headers = dict(config.headers)
+        if not config.base_url or not config.api_key:
+            return headers
+        if any(name.lower() == "x-api-key" for name in headers):
+            return headers
+        headers["x-api-key"] = config.api_key
+        return headers
+
+    @classmethod
     def _create_anthropic(cls, config: ConfigLLM, model: str) -> ChatAnthropic:
         """Create Anthropic LLM."""
+        headers = cls._anthropic_headers(config)
         return ChatAnthropic(
             model=model,
             anthropic_api_key=config.api_key,
             base_url=config.base_url or "https://api.anthropic.com",
             temperature=config.temperature,
-            **cls._default_headers(config),
+            **({"default_headers": headers} if headers else {}),
             **cls._limit_kwargs(config),
         )
 

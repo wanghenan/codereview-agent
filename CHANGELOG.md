@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Anthropic-compatible gateways no longer fail with `401 Go requires a credential`. `anthropic` 2.x authenticates with `Authorization: Bearer`, while gateways such as `opencode.ai/zen/go` implement `x-api-key`; the key is now also sent as `x-api-key` for a custom `base_url` (the official endpoint is unchanged).
+- A review that exhausts its retries is no longer scored as a benchmark candidate hit: the synthetic failure issue has no line, so it used to count as a file-level match and an API outage could raise the score.
 - The `[dev]` extras were unsatisfiable at their own minimums: `pytest>=8.0.0` together with `pytest-asyncio>=1.2.0` (which requires `pytest<9,>=8.2`) made `pip install --resolution lowest-direct -e ".[dev]"` fail outright, and `matplotlib>=3.0.0` no longer builds on the supported interpreters. Floors are now `pytest>=8.2.0` and `matplotlib>=3.8.0`.
 - `[tool.mypy].python_version` said `3.9` while `requires-python` is `>=3.10`, so the type check silently targeted an unsupported interpreter (mypy 2.x rejects it outright). It is now `"3.10"`, and `[tool.ruff].target-version` matches.
 
