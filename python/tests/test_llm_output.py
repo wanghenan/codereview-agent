@@ -78,3 +78,30 @@ def test_parse_json_object_passes_dicts_through() -> None:
 def test_extract_balanced_object_handles_nesting_and_strings(text: str) -> None:
     """Brace counting respects nesting and string literals."""
     assert extract_balanced_object(text) == text
+
+
+def test_dump_unparseable_is_disabled_without_env(monkeypatch, tmp_path):
+    from codereview.core import llm_output
+
+    monkeypatch.delenv("CODEREVIEW_DUMP_LLM_RAW", raising=False)
+    assert llm_output.dump_unparseable("not json") is None
+    assert not list(tmp_path.iterdir())
+
+
+def test_dump_unparseable_writes_the_raw_text(monkeypatch, tmp_path):
+    """A parse failure is otherwise lost to the retry loop that follows it."""
+    from codereview.core import llm_output
+
+    monkeypatch.setenv("CODEREVIEW_DUMP_LLM_RAW", str(tmp_path))
+    path = llm_output.dump_unparseable("I cannot answer in JSON", "pkg_mod.py")
+
+    assert path is not None and path.parent == tmp_path
+    assert path.read_text(encoding="utf-8") == "I cannot answer in JSON"
+    assert "pkg_mod.py" in path.name
+
+
+def test_dump_unparseable_never_raises(monkeypatch):
+    from codereview.core import llm_output
+
+    monkeypatch.setenv("CODEREVIEW_DUMP_LLM_RAW", "/dev/null/not-a-dir")
+    assert llm_output.dump_unparseable("x") is None

@@ -14,7 +14,11 @@ plain string, which keeps callers free of provider-specific branching.
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
+import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 #: Block types whose ``text`` belongs to the answer. Reasoning blocks and tool
@@ -134,3 +138,28 @@ def parse_json_object(raw: Any) -> Optional[dict]:
         return parsed if isinstance(parsed, dict) else None
 
     return None
+
+
+def dump_unparseable(raw: str, tag: str = "review") -> Path | None:
+    """Write an unparseable model response to disk when asked to.
+
+    Parse failures are stochastic and cheap to lose: the retry loop overwrites
+    them a few seconds later, leaving "Failed to parse LLM output as JSON" and
+    no evidence. Setting ``CODEREVIEW_DUMP_LLM_RAW`` to a directory keeps the
+    raw text so a failing response can be turned into a fixture.
+
+    Returns the written path, or ``None`` when dumping is disabled or the write
+    fails. Never raises: diagnosing a failure must not create a new one.
+    """
+    directory = os.environ.get("CODEREVIEW_DUMP_LLM_RAW")
+    if not directory:
+        return None
+    try:
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = target / f"raw-{stamp}-{tag}-{uuid.uuid4().hex[:6]}.txt"
+        path.write_text(raw, encoding="utf-8")
+        return path
+    except OSError:
+        return None

@@ -21,12 +21,12 @@ from tqdm import tqdm
 from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.diff_numbering import number_patch
 from codereview.core.finding_filter import FilterRules, filter_findings
+from codereview.core.llm_output import dump_unparseable, parse_json_object
 
 # Re-exported for tests that exercise the object-scanning helper directly.
 from codereview.core.llm_output import (
     extract_balanced_object as _extract_balanced_object,  # noqa: F401
 )
-from codereview.core.llm_output import parse_json_object
 from codereview.core.path_matcher import ExcludeMatcher
 from codereview.core.symbol_index import Neighbor, SymbolIndex, definition_spans
 from codereview.core.tool_runner import (
@@ -816,6 +816,7 @@ class ReviewAgent:
             result = self._repair_json_output(raw_result)
 
             if result is None:
+                dump_unparseable(raw_result, entry.filename.replace("/", "_"))
                 raise ValueError("Failed to parse LLM output as JSON")
 
             # Normalize risk_level values
