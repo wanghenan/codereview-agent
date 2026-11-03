@@ -259,7 +259,8 @@ class TestLLMFactory:
         assert "minimax" in providers
         assert "qwen" in providers
         assert "deepseek" in providers
-        assert len(providers) == 6
+        assert "opencode-go" in providers
+        assert sorted(providers) == sorted(p.value for p in LLMProvider)
 
     def test_anthropic_with_custom_base_url(self):
         """Test Anthropic with custom base_url."""
@@ -359,6 +360,48 @@ class TestLLMFactory:
         with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
             LLMFactory.create(config)
             assert mock_anthropic.call_args[1]["default_headers"] == {"x-opencode-session": "s"}
+
+    def test_opencode_go_provider_needs_only_a_key(self):
+        """One provider name carries the endpoint, the default model and the
+        routing header, so a gateway setup is not three separate decisions."""
+        config = ConfigLLM(provider=LLMProvider.OPENCODE_GO, api_key="test-key")
+
+        llm = LLMFactory.create(config)
+
+        assert type(llm).__name__ == "ChatAnthropic"
+        assert llm.model == "deepseek-v4.1-flash"
+        assert "opencode.ai/zen/go" in str(llm._client.base_url)
+        headers = {k.lower(): v for k, v in llm._client.default_headers.items()}
+        assert headers["x-api-key"] == "test-key"
+        # The gateway rejects a request without this header; any UUID routes.
+        assert len(headers["x-opencode-session"]) == 36
+
+    def test_opencode_go_respects_an_explicit_session(self):
+        config = ConfigLLM(
+            provider=LLMProvider.OPENCODE_GO,
+            api_key="test-key",
+            headers={"x-opencode-session": "my-session"},
+        )
+
+        assert LLMFactory._anthropic_headers(config)["x-opencode-session"] == "my-session"
+
+    def test_opencode_go_model_can_be_overridden(self):
+        config = ConfigLLM(
+            provider=LLMProvider.OPENCODE_GO, api_key="test-key", model="qwen3.8-flash"
+        )
+
+        with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
+            LLMFactory.create(config)
+            assert mock_anthropic.call_args[1]["model"] == "qwen3.8-flash"
+
+    def test_every_provider_has_a_base_url_or_a_native_client(self):
+        """`opencode-go` must not fall through to api.anthropic.com."""
+        for provider in LLMProvider:
+            config = ConfigLLM(provider=provider, api_key="k")
+            llm = LLMFactory.create(config)
+            inner = getattr(llm, "_client", None)
+            base = str(getattr(inner, "base_url", "") or getattr(llm, "openai_api_base", "") or "")
+            assert "api.anthropic.com" not in base or provider == LLMProvider.ANTHROPIC
 
     def test_headers_forwarded_to_openai(self):
         """Test custom headers reach ChatOpenAI (OpenAI branch)."""
