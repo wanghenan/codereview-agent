@@ -499,7 +499,7 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 
 `finding_details` 是逐条 finding 的锚点信息（`line` / `title` / `evidence` / `suggestion`，`suggestion` 截断 200 字符），用来量"按 finding 自引用的代码片段在 patch 内重定位锚点"的可行性；`findings` 仍是条数，`gate.py` 与旧报告不需要改。
 
-**基线现状（2026-11-02）**：语料已扩到 20 条，但 `baseline.json` 里 `real_pr` 仍是 9 条（那次实测之后官方 DeepSeek 余额用尽，没法用同一模型重跑 20 条）。`gate.py` 在"报告用例数多于基线"时判失败，所以**夜间作业在基线刷新前会红**；仓库目前没配 `DEEPSEEK_API_KEY`，作业会跳过，因此不影响 CI。刷新方式：用 `deepseek-chat` 跑一次 20 条，把 `real_pr.matched` / `total` 改成实测值。
+**基线现状（2026-11-02）**：语料已扩到 20 条，但 `baseline.json` 里 `real_pr` 仍是 9 条（那次实测之后官方 DeepSeek 余额用尽，没法用同一模型重跑 20 条）。`gate.py` 在"报告用例数多于基线"时判失败，所以**夜间作业在基线刷新前会红**；仓库目前没配 `DEEPSEEK_API_KEY`，作业会跳过，因此不影响 CI。刷新方式：用 `deepseek-chat` 跑一次 20 条，把 `real_pr.matched` / `total` 改成实测值。2026-11-03 已有一次 20 条单轮实测（全来源 ±3 命中 11/20，见下节），但跑在 `opencode-go` 上，与基线不同源，因此没有直接采信。
 
 `gate.py` 读取这份 JSON 与签入的 `baseline.json`，按 origin 比较正例的候选命中数；低于基线减 `--tolerance`（默认 0）即退出码 1，并打印未命中的用例名。用例数少于基线（或多于基线，说明基线该刷新）同样判失败。
 
@@ -513,3 +513,42 @@ python tests/benchmark/bench.py --validate --origin real-pr     # 校验 20 条 
 `.github/workflows/benchmark.yml` 每天 18:00 UTC 跑一次（也可手动 `workflow_dispatch`）：Python 3.11、`pip install -e "python[dev]"`、`bench.py --validate`、`bench.py --all --config tests/benchmark/bench.yaml --json-out ...`、`gate.py`，报告与 JSON 作为 artifact 上传。仓库没有 `DEEPSEEK_API_KEY`（fork / 未配 secret）时整个作业跳过并输出 notice，不会红。
 
 **门禁只看候选命中，不看语义**：它用来发现"这次改动让基准变差"的量级回归，不能代替上面 2/8 的人工语义判定。
+
+### 分层实测：design / nit 两层（2026-11-03，20 条单轮）
+
+此前只测过 `defect` 层（9 条），`design`（8 条）与 `nit`（3 条）一直是"未知"。用 `bench.py --strictness` 把三层一次跑齐，答案和预想相反。
+
+**设置**：`opencode-go` / `deepseek-v4.1-flash`（`billing_source: go`），单轮，`context.neighbors_trigger: always`，`--all --origin real-pr`。1 条无效：`real-matplotlib-hist-colors-sequence` 连续 3 次 JSON 解析失败（模型输出不是合法 JSON），分母按 19 条有效、表格按 20 条列。
+
+**候选命中（±3 行，即 `gate.py` 口径）**
+
+| 层 | 条数 | LLM 命中 | 全来源命中 | LLM findings | 工具 findings |
+|---|---|---|---|---|---|
+| defect | 9 | 3 | 4 | 31 | 93 |
+| design | 8 | 5 | 5 | 30 | 166 |
+| nit | 3 | 2 | 2 | 13 | 9 |
+| 合计 | 20 | 10 | 11 | 74 | 268 |
+
+**design 5/8 高于 defect 3/9**，所以"工具只会找具体 bug、碰不到设计类意见"这个假设不成立，不必据此缩小定位。
+
+**但 10 个命中里只有 5 个是真命中。** 逐条读模型原文后：`aiohttp-cause-without-traceback`（`__cause__` 的 traceback 缺失）、`black-3219-invalid-specifier`（`Version()` 抛 InvalidVersion 逃逸）、`drf-8532-duration-format`（`getattr` 兜底与另一处校验重复）、`flask-3412-asgiref-import`（模块级 asgiref 依赖）、`requests-timedcache-keyerror`（裸 `KeyError` 丢键）这 5 条与人工评论是同一个问题；另 5 条只是落在同一区域、说的是另一件事，例如 `aiohttp-9732-middleware-default` 人工要的是"默认 `()`、删判空"，模型说的是"`ClientMiddlewareType` 没导入"。
+
+**±3 这个口径主要在量"行号精度"，不是在量"有没有发现"。**
+
+| 容差 | defect | design | nit | 合计 |
+|---|---|---|---|---|
+| 0 | 2/9 | 4/8 | 2/3 | 8/20 |
+| **3** | **3/9** | **5/8** | **2/3** | **10/20** |
+| 5 | 4/9 | 5/8 | 2/3 | 11/20 |
+| 8 | 7/9 | 7/8 | 2/3 | 16/20 |
+| 15 | 7/9 | 8/8 | 2/3 | 17/20 |
+| 30 | 8/9 | 8/8 | 3/3 | 19/20 |
+
+放宽到 ±8，defect 和 design 都变成 7/9 与 7/8，层间差异消失——说明**三层难度其实相当**，之前的差距来自锚点落点而非识别能力。漏掉的用例里也有明确属于"同问题不同行"的：`drf-datetime-local-none-format` 在 Δ8 处说的正是那句 `field.value.replace(...)` 对 str 抛 AttributeError，`django-migrate-install-error-swallowed` 在 Δ4。
+
+**两个评估口径的污染**
+
+- **工具 findings 压倒模型 findings**（268 vs 74）。它们没有按 diff 裁剪（见 #63）：改一行 `aiohttp/client.py` 会带出 52 条存量 `UP006/UP007`。其中 `django-migrate-install-error-swallowed` 的"命中"只来自一条 lint 结果，即 11 个候选命中里有 1 个是噪声贡献的。
+- **JSON 解析失败每轮都会出现**：20 条里有 1 条三次全败、另有 6 条需要重试。重试把耗时拉长，也说明输出格式的稳定性仍是弱项。
+
+**结论**：design/nit 可达，且与 defect 同量级；`±3` 分数不宜当能力指标引用，语义人工判定仍是唯一可信口径（本轮 5/20 明确同因）。这份数据用的是 opencode-go，与 `baseline.json`（`deepseek-chat`）不同源，因此**没有**据此改基线。
