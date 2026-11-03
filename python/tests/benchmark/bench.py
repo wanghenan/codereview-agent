@@ -135,8 +135,31 @@ def _null_context() -> Iterator[None]:
     yield
 
 
+def _evidence_details(issue: dict[str, Any]) -> list[str]:
+    """Return the finding's evidence details as plain strings.
+
+    The review result is a model dump, so anchors are ``{kind, detail}`` dicts;
+    accept objects too so the helper stays usable on live ``FileIssue`` models.
+    """
+    details = []
+    for anchor in issue.get("evidence") or []:
+        if isinstance(anchor, dict):
+            detail = anchor.get("detail")
+        else:
+            detail = getattr(anchor, "detail", None)
+        text = (detail or "").strip()
+        if text:
+            details.append(text)
+    return details
+
+
 def findings_of(result: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flatten the review result into (file, line, severity, description) rows."""
+    """Flatten the review result into one row per finding.
+
+    Rows carry the fields the benchmark reports need: where the finding landed,
+    what it claims, and the evidence anchors used to judge whether a code
+    fragment could relocate the anchor inside the patch.
+    """
     rows = []
     for review in result.get("files_reviewed", []):
         for issue in review.get("issues", []):
@@ -149,7 +172,9 @@ def findings_of(result: dict[str, Any]) -> list[dict[str, Any]]:
                     "source": issue.get("source"),
                     "category": issue.get("category"),
                     "caller": issue.get("caller"),
+                    "title": (issue.get("title") or "").strip(),
                     "description": (issue.get("description") or "").strip(),
+                    "evidence": _evidence_details(issue),
                     "suggestion": (issue.get("suggestion") or "").strip(),
                 }
             )
@@ -201,9 +226,14 @@ def _fmt_finding(row: dict[str, Any]) -> str:
     conf = row.get("confidence")
     conf_text = f" conf={conf:.2f}" if isinstance(conf, (int, float)) else ""
     caller = f" caller={row['caller']}" if row.get("caller") else ""
+    # The first anchor is the most specific one the model cited, and it is what
+    # a later fragment-based re-anchor pass would look up inside the patch.
+    evidence = row.get("evidence") or []
+    snippet = " ".join(str(evidence[0]).split())[:80] if evidence else ""
+    evidence_text = f" | evidence: {snippet}" if snippet else ""
     return (
         f"- `{loc}`{delta} [{row['severity']}{conf_text} src={row.get('source')}"
-        f"/{row.get('category')}{caller}] {row['description'][:600]}"
+        f"/{row.get('category')}{caller}] {row['description'][:600]}{evidence_text}"
     )
 
 
@@ -301,6 +331,21 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
+def _finding_detail(row: dict[str, Any]) -> dict[str, Any]:
+    """Return the per-finding JSON record used to evaluate anchor relocation.
+
+    ``suggestion`` is capped at 200 characters: the field is prose and the
+    report is uploaded as an artifact, so keeping it whole would bloat the JSON
+    without helping the fragment-matching measurement.
+    """
+    return {
+        "line": row.get("line"),
+        "title": row.get("title", ""),
+        "evidence": list(row.get("evidence") or []),
+        "suggestion": (row.get("suggestion") or "")[:200],
+    }
+
+
 def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> Path:
     """Write the machine-readable report consumed by ``gate.py``.
 
@@ -308,6 +353,10 @@ def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> P
     line within tolerance. This is a regression signal only, never proof of a
     semantic hit. ``strictness`` is copied from the case YAML (``null`` when the
     case does not declare one) so stratified reports need not re-read the YAML.
+
+    ``findings`` stays the count the gate and older reports expect;
+    ``finding_details`` carries the per-finding anchors (``line``, ``title``,
+    ``evidence``, ``suggestion``) needed to evaluate patch-based relocation.
     """
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -319,6 +368,7 @@ def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> P
                 "kind": item["case"]["kind"],
                 "strictness": item["case"].get("strictness"),
                 "findings": len(item["findings"]),
+                "finding_details": [_finding_detail(row) for row in item["findings"]],
                 "matched": bool(item["matched"]),
                 "best_delta": item["best_delta"],
                 "elapsed": round(float(item["elapsed"]), 2),
