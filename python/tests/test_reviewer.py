@@ -102,7 +102,7 @@ class TestReviewAgent:
         current_concurrent = 0
         lock = asyncio.Lock()
 
-        async def slow_review(entry):
+        async def slow_review(entry, strict_json=False):
             nonlocal current_concurrent, max_concurrent
             async with lock:
                 current_concurrent += 1
@@ -182,7 +182,7 @@ class TestReviewAgent:
         """Test retry logic with 3 retries then returns degraded result."""
         call_count = 0
 
-        async def always_fail(entry):
+        async def always_fail(entry, strict_json=False):
             nonlocal call_count
             call_count += 1
             raise ValueError("Simulated failure")
@@ -238,7 +238,7 @@ class TestReviewAgent:
         """Test LLM response parsing with valid JSON."""
         agent = ReviewAgent(config, mock_llm, project_context)
 
-        async def mock_review(entry):
+        async def mock_review(entry, strict_json=False):
             return FileReview(
                 file_path=entry.filename,
                 risk_level=RiskLevel.MEDIUM,
@@ -276,7 +276,7 @@ class TestReviewAgent:
     def test_llm_response_parsing_invalid_json(self, config, project_context):
         """Test LLM response parsing with invalid JSON raises exception."""
 
-        async def failing_review(entry):
+        async def failing_review(entry, strict_json=False):
             raise ValueError("Invalid JSON")
 
         agent = ReviewAgent(config, MagicMock(), project_context)
@@ -307,7 +307,7 @@ class TestReviewAgent:
 
         review_calls = 0
 
-        async def counting_review(entry):
+        async def counting_review(entry, strict_json=False):
             nonlocal review_calls
             review_calls += 1
             return FileReview(

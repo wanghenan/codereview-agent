@@ -26,6 +26,17 @@ from typing import Any, Optional
 _TEXT_BLOCK_TYPES = frozenset({None, "text", "text_delta"})
 
 
+
+
+class LLMOutputParseError(ValueError):
+    """The model answered, but the answer contained no usable JSON object.
+
+    A distinct type (rather than a bare ``ValueError``) lets the retry loop tell
+    "the model wrote prose" from "the request was rejected", which need
+    different handling: the first is worth retrying with a stricter
+    instruction, the second never succeeds on retry.
+    """
+
 def message_text(raw: Any) -> str:
     """Return the assistant's answer text from a message, a content list, or a string.
 
