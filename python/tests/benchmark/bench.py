@@ -248,11 +248,18 @@ def render(
     results: list[dict[str, Any]],
     out: Path,
     config_path: Path = DEFAULT_CONFIG,
+    llm: dict[str, Any] | None = None,
 ) -> str:
+    where = f"cases: {len(results)} · repo: `{REPO_ROOT.name}` · config: `{config_path.name}`"
+    # The config file name says nothing about what actually answered: the same
+    # `oc.yaml` may point at a different model next month, and reports from
+    # different providers are not comparable. Record the resolved target.
+    if llm and llm.get("model"):
+        where += f" · model: `{llm.get('provider')}/{llm['model']}`"
     lines = [
         "# Benchmark run",
         "",
-        f"cases: {len(results)} · repo: `{REPO_ROOT.name}` · config: `{config_path.name}`",
+        where,
         "",
         "| case | origin | kind | strictness | findings | candidate | elapsed | verdict |",
         "|---|---|---|---|---|---|---|---|",
@@ -346,7 +353,56 @@ def _finding_detail(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> Path:
+def _llm_identity(config_path: Path) -> dict[str, Any]:
+    """Return the provider/model the config resolves to, for report attribution.
+
+    Best effort: a config that cannot be loaded (missing API key, unreadable
+    file) must not stop a benchmark run, so failures yield an empty mapping and
+    the report simply omits the model line.
+    """
+    try:
+        from codereview.core.config import ConfigLoader
+
+        llm = ConfigLoader.load(config_path).llm
+    except Exception:  # noqa: BLE001 - attribution is never worth failing a run
+        return {}
+    identity: dict[str, Any] = {"provider": str(llm.provider), "model": llm.model or ""}
+    if llm.base_url:
+        identity["baseUrl"] = llm.base_url
+    return identity
+
+
+def select_cases(
+    cases: list[dict[str, Any]],
+    *,
+    kind: str | None = None,
+    tag: str | None = None,
+    origin: str | None = None,
+    strictness: str | None = None,
+) -> list[dict[str, Any]]:
+    """Filter cases by the CLI selectors; every one is optional and ANDed.
+
+    Kept separate from :func:`main` so the selection rules are testable without
+    running a review.
+    """
+    selected = cases
+    if kind:
+        selected = [c for c in selected if c["kind"] == kind]
+    if tag:
+        selected = [c for c in selected if tag in (c.get("tags") or [])]
+    if origin:
+        selected = [c for c in selected if c.get("origin", "injected") == origin]
+    if strictness:
+        selected = [c for c in selected if c.get("strictness") == strictness]
+    return selected
+
+
+def write_json(
+    results: list[dict[str, Any]],
+    out: Path,
+    config_path: Path,
+    llm: dict[str, Any] | None = None,
+) -> Path:
     """Write the machine-readable report consumed by ``gate.py``.
 
     ``matched``/``best_delta`` come from :func:`candidate_hit`: same file and a
@@ -357,10 +413,15 @@ def write_json(results: list[dict[str, Any]], out: Path, config_path: Path) -> P
     ``findings`` stays the count the gate and older reports expect;
     ``finding_details`` carries the per-finding anchors (``line``, ``title``,
     ``evidence``, ``suggestion``) needed to evaluate patch-based relocation.
+
+    ``llm`` records the resolved provider/model, because ``config`` is only a
+    path: two runs against the same config file can be answered by different
+    models, and numbers from different providers are not comparable.
     """
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "config": _display_path(config_path),
+        "llm": llm or {},
         "cases": [
             {
                 "id": item["case"]["id"],
@@ -401,6 +462,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=["injected", "real-pr"],
         help="only run cases from this origin",
     )
+    parser.add_argument(
+        "--strictness",
+        choices=["defect", "design", "nit"],
+        help="only run real-PR cases of this review strictness",
+    )
     args = parser.parse_args(argv)
 
     # Real-PR cases chdir into their checkout, so a relative --config would be
@@ -408,12 +474,13 @@ def main(argv: list[str] | None = None) -> int:
     config_path = args.config.expanduser().resolve()
 
     cases = load_cases(args.case)
-    if args.kind:
-        cases = [c for c in cases if c["kind"] == args.kind]
-    if args.tag:
-        cases = [c for c in cases if args.tag in (c.get("tags") or [])]
-    if args.origin:
-        cases = [c for c in cases if c.get("origin", "injected") == args.origin]
+    cases = select_cases(
+        cases,
+        kind=args.kind,
+        tag=args.tag,
+        origin=args.origin,
+        strictness=args.strictness,
+    )
 
     problems = 0
     for case in cases:
@@ -465,10 +532,11 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     out = args.out or BENCH_DIR / "reports" / f"run-{time.strftime('%Y%m%d-%H%M')}.md"
-    render(results, out, config_path)
+    llm = _llm_identity(config_path)
+    render(results, out, config_path, llm)
     print(f"report: {_display_path(out)}")
     if args.json_out:
-        json_out = write_json(results, args.json_out.expanduser(), config_path)
+        json_out = write_json(results, args.json_out.expanduser(), config_path, llm)
         print(f"json: {_display_path(json_out)}")
     return 0
 

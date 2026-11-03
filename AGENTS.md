@@ -44,7 +44,8 @@ cd python && python -m build
 
 ### General
 - **Line length**: max 100 chars
-- **Python**: 3.9+
+- **Python**: 3.10+ (`requires-python`, tested on 3.10/3.11/3.12). The source
+  uses PEP 604 unions at runtime, so 3.9 is not supported.
 - **Follow PEP 8** with ruff
 
 ### Imports
@@ -52,7 +53,6 @@ cd python && python -m build
 from __future__ import annotations
 import asyncio, logging
 from pathlib import Path
-from typing import Optional
 from pydantic import BaseModel, Field
 from codereview.models import ReviewResult
 # ruff handles sorting
@@ -60,8 +60,10 @@ from codereview.models import ReviewResult
 
 ### Type Hints
 - Required for function signatures
-- Use `list`, `dict` (Python 3.9+)
-- Use `Optional[X]` not `X | None`
+- Use `list`, `dict` (not `List`, `Dict`)
+- Use PEP 604 unions: `X | None`, not `Optional[X]`. Ruff's `UP007` enforces
+  this because `[tool.ruff].target-version` is `py310`; `Optional` is still
+  fine inside quoted annotations that must stay 3.9-compatible.
 
 ### Naming
 - `snake_case` for functions/variables
@@ -76,10 +78,10 @@ class RiskLevel(str, Enum):
 
 class FileIssue(BaseModel):
     file_path: str
-    line_number: Optional[int] = None
+    line_number: int | None = None
     risk_level: RiskLevel
     description: str
-    suggestion: Optional[str] = None
+    suggestion: str | None = None
 ```
 
 ### Error Handling

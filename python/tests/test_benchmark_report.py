@@ -201,3 +201,67 @@ def test_markdown_omits_evidence_suffix_when_absent(tmp_path: Path) -> None:
     text = bench.render([result], tmp_path / "report.md", Path("bench.yaml"))
 
     assert "evidence:" not in text
+
+
+def test_json_out_records_resolved_llm(tmp_path: Path) -> None:
+    """A report must say which model produced it: the config path does not."""
+    results = [make_result("case-a")]
+    llm = {"provider": "anthropic", "model": "deepseek-v4.1-flash", "baseUrl": "https://x/y"}
+
+    out = bench.write_json(results, tmp_path / "report.json", Path("oc.yaml"), llm)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["llm"] == llm
+    assert payload["config"].endswith("oc.yaml")
+
+
+def test_json_out_llm_is_empty_mapping_when_unknown(tmp_path: Path) -> None:
+    out = bench.write_json([make_result("case-a")], tmp_path / "report.json", Path("oc.yaml"))
+
+    assert json.loads(out.read_text(encoding="utf-8"))["llm"] == {}
+
+
+def test_markdown_header_shows_model_when_known(tmp_path: Path) -> None:
+    llm = {"provider": "anthropic", "model": "deepseek-v4.1-flash"}
+
+    text = bench.render([make_result("case-a")], tmp_path / "r.md", Path("oc.yaml"), llm)
+
+    assert "model: `anthropic/deepseek-v4.1-flash`" in text
+    assert "model:" not in bench.render(
+        [make_result("case-a")], tmp_path / "r2.md", Path("oc.yaml")
+    )
+
+
+def test_select_cases_filters_by_strictness() -> None:
+    cases = [
+        make_result("defect-case", strictness="defect")["case"],
+        make_result("design-case", strictness="design")["case"],
+        make_result("nit-case", strictness="nit")["case"],
+        make_result("plain-case")["case"],
+    ]
+
+    assert [c["id"] for c in bench.select_cases(cases, strictness="design")] == ["design-case"]
+    assert [c["id"] for c in bench.select_cases(cases)] == [
+        "defect-case",
+        "design-case",
+        "nit-case",
+        "plain-case",
+    ]
+
+
+def test_select_cases_ands_selectors() -> None:
+    cases = [
+        make_result("real-design", strictness="design", origin="real-pr")["case"],
+        make_result("injected-design", strictness="design")["case"],
+        make_result("real-defect", strictness="defect", origin="real-pr")["case"],
+    ]
+
+    picked = bench.select_cases(cases, origin="real-pr", strictness="design")
+    assert [c["id"] for c in picked] == ["real-design"]
+
+
+def test_strictness_choices_match_case_values() -> None:
+    """The CLI choices must stay in sync with what the corpus actually declares."""
+    declared = {case.get("strictness") for case in bench.load_cases() if case.get("strictness")}
+    parser_choices = {"defect", "design", "nit"}
+    assert declared <= parser_choices
