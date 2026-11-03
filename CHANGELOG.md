@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-03
+
 ### Fixed
 - Anthropic-compatible gateways no longer fail with `401 Go requires a credential`. `anthropic` 2.x authenticates with `Authorization: Bearer`, while gateways such as `opencode.ai/zen/go` implement `x-api-key`; the key is now also sent as `x-api-key` for a custom `base_url` (the official endpoint is unchanged).
 - A review that exhausts its retries is no longer scored as a benchmark candidate hit: the synthetic failure issue has no line, so it used to count as a file-level match and an API outage could raise the score.
@@ -16,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `bench.py --strictness defect|design|nit` runs a single stratum of the corpus, and reports record the resolved `llm` provider/model/baseUrl instead of only the config path, so numbers can be attributed to the model that produced them.
 - CI job `Test (minimum dependency floors)` installs the lowest version each floor allows (`uv pip install --resolution lowest-direct`) and runs the suite, so the published floors are exercised instead of only the latest resolution. Verified range: `langchain 0.3.26`–`1.4.8`, `langgraph 0.2.17`–`1.2.19`, 714 tests passing at both ends.
+
+### Changed
+- Dependency floors raised to what is actually tested: `pydantic>=2.12.5`, `aiohttp>=3.13.5`, `tqdm>=4.67.3`, `python-dotenv>=1.2.1`, `langchain-openai>=0.3.35`, `langchain-anthropic>=0.3.22`. CI actions move to `checkout@v6`, `setup-python@v6`, `setup-uv@v7`, `upload-artifact@v7`, `github-script@v8`.
 
 ## [1.3.1] - 2026-11-03
 
