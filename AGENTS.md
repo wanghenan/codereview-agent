@@ -138,3 +138,33 @@ python/
 Run CLI: `cd python && python -m codereview.cli --diff '{"files": [...]}'`
 
 Add rule: create in `rules/`, register in engine, add tests.
+
+---
+
+## Delegating work to the superagent
+
+Two GitHub identities are in play and they are **not** interchangeable:
+
+| command | identity | use it for |
+|---|---|---|
+| `gh` | human account (`wanghenan`) | **requesting** work: creating issues, `@hernon-agent` mentions |
+| `~/.local/bin/gh-agent` | GitHub App (`hernon-agent`) | the workers' own actions; reading PRs and issues |
+
+The superagent ignores events produced by its own App identity (self-loop
+protection). An issue or an `@hernon-agent` mention created with `gh-agent` is
+therefore **silently ignored**: no ticket, no PR, no error. Always file the
+issue and post the hand-off comment with `gh`.
+
+```bash
+gh issue create --title "..." --body-file /tmp/issue.md
+gh issue comment <n> --body "@hernon-agent 口径已定，按正文实现"
+```
+
+A ticket appears in the orchestrator within about a minute; if nothing appears,
+the event was dropped — re-post it with `gh` rather than waiting.
+
+**Write the decision into the issue.** A worker will not come back with a
+question; if the issue leaves a product choice open it will pick one. State the
+rule, the exact function to change, and the acceptance criteria (tests, lint,
+`gen_cases --check`). Two issues touching the same file should be handed off one
+at a time.
