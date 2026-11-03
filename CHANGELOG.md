@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The `[dev]` extras were unsatisfiable at their own minimums: `pytest>=8.0.0` together with `pytest-asyncio>=1.2.0` (which requires `pytest<9,>=8.2`) made `pip install --resolution lowest-direct -e ".[dev]"` fail outright, and `matplotlib>=3.0.0` no longer builds on the supported interpreters. Floors are now `pytest>=8.2.0` and `matplotlib>=3.8.0`.
+- `[tool.mypy].python_version` said `3.9` while `requires-python` is `>=3.10`, so the type check silently targeted an unsupported interpreter (mypy 2.x rejects it outright). It is now `"3.10"`, and `[tool.ruff].target-version` matches.
+
+### Added
+- CI job `Test (minimum dependency floors)` installs the lowest version each floor allows (`uv pip install --resolution lowest-direct`) and runs the suite, so the published floors are exercised instead of only the latest resolution. Verified range: `langchain 0.3.26`–`1.4.8`, `langgraph 0.2.17`–`1.2.19`, 714 tests passing at both ends.
+
 ## [1.3.1] - 2026-11-03
 
 ### Added
