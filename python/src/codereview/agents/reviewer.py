@@ -137,6 +137,11 @@ class OrchestratorState(TypedDict, total=False):
 
 
 # System prompt for code review
+#: Prefix of the synthetic issue a failed review produces. The CLI shows it
+#: to the user, but it is not a finding: consumers that score or filter
+#: findings must drop it, or an API outage would look like a review result.
+REVIEW_FAILURE_PREFIX = "Review failed after "
+
 REVIEW_SYSTEM_PROMPT = """You are an expert code reviewer. Your task is to review code changes
 and identify potential issues.
 
@@ -423,7 +428,7 @@ class ReviewAgent:
                 FileIssue(
                     file_path=entry.filename,
                     risk_level=RiskLevel.MEDIUM,
-                    description=f"Review failed after {max_retries} attempts: {last_error}",
+                    description=f"{REVIEW_FAILURE_PREFIX}{max_retries} attempts: {last_error}",
                     suggestion="Consider reviewing this file manually or breaking it into smaller changes",
                 )
             ],

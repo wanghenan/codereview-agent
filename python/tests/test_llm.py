@@ -278,6 +278,10 @@ class TestLLMFactory:
                 anthropic_api_key="test-key",
                 base_url="https://custom.anthropic.com",
                 temperature=0.5,
+                # anthropic 2.x authenticates with `Authorization: Bearer`,
+                # which Anthropic-compatible gateways reject; the key is also
+                # sent as `x-api-key` for custom endpoints.
+                default_headers={"x-api-key": "test-key"},
             )
             assert result == mock_instance
 
@@ -342,7 +346,18 @@ class TestLLMFactory:
         with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
             LLMFactory.create(config)
             call_kwargs = mock_anthropic.call_args[1]
-            assert call_kwargs["default_headers"] == headers
+            assert call_kwargs["default_headers"] == {**headers, "x-api-key": "test-key"}
+
+    def test_official_anthropic_endpoint_keeps_sdk_auth_only(self):
+        """Without a custom base_url no second auth header is added."""
+        config = ConfigLLM(
+            provider=LLMProvider.ANTHROPIC,
+            api_key="test-key",
+            headers={"x-opencode-session": "s"},
+        )
+        with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
+            LLMFactory.create(config)
+            assert mock_anthropic.call_args[1]["default_headers"] == {"x-opencode-session": "s"}
 
     def test_headers_forwarded_to_openai(self):
         """Test custom headers reach ChatOpenAI (OpenAI branch)."""
@@ -414,4 +429,7 @@ llm:
         }
         with patch("codereview.core.llm.ChatAnthropic") as mock_anthropic:
             LLMFactory.create(config.llm)
-            assert mock_anthropic.call_args[1]["default_headers"] == config.llm.headers
+            assert mock_anthropic.call_args[1]["default_headers"] == {
+                **config.llm.headers,
+                "x-api-key": "resolved-token",
+            }

@@ -5,7 +5,7 @@ language: python
 base: python/src/codereview/core/llm.py
 expect:
   file: python/src/codereview/core/llm.py
-  line: 198
+  line: 222
   line_tolerance: 5
   category: maintainability
   severity: low
@@ -15,7 +15,7 @@ tags:
 - observability
 diff: "diff --git a/python/src/codereview/core/llm.py b/python/src/codereview/core/llm.py\n\
   --- a/python/src/codereview/core/llm.py\n+++ b/python/src/codereview/core/llm.py\n\
-  @@ -195,7 +195,7 @@\n                     return llm\n             except Exception\
+  @@ -219,7 +219,7 @@\n                     return llm\n             except Exception\
   \ as e:\n                 last_error = e\n-                logger.warning(f\"Provider\
   \ {provider_name} failed: {e}\")\n+                logger.debug(f\"Provider {provider_name}\
   \ failed: {e}\")\n \n         raise last_error or Exception(\"All LLM providers\
