@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-03
+
+### Fixed
+- The 1.3.2 fix for Anthropic-compatible gateways broke `anthropic` 0.x, which is the declared floor: the 0.x SDK already sends `X-Api-Key`, so adding `x-api-key` put the same header on the request twice (case-insensitive) and the gateway answered `401 Invalid credential`. The header now uses the SDK's casing so it overrides instead of duplicating, and a case-insensitive duplicate check pins it.
+
 ## [1.3.2] - 2026-11-03
 
 ### Fixed
