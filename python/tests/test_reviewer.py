@@ -465,3 +465,89 @@ class TestReviewOrchestrator:
         assert "b.py" in summary
         assert "high" in summary
         assert "low" in summary
+
+
+def _fake_tool_runner(findings: list[dict]) -> MagicMock:
+    """Return a tool-runner stub that reports *findings* without a subprocess."""
+    runner = MagicMock()
+    runner.list_tools.return_value = [object()]
+    runner.run.return_value = findings
+    return runner
+
+
+def _tool_finding(line: int | None, filename: str = "src/app.py") -> dict:
+    """Build the normalised shape :class:`ToolRunner` emits."""
+    return {
+        "file": filename,
+        "line": line,
+        "rule_id": "F401",
+        "tool": "ruff",
+        "severity": "warning",
+        "description": "unused import",
+    }
+
+
+def test_tool_findings_are_limited_to_changed_lines(config, mock_llm, project_context):
+    """A finding survives only on a line the diff changes and has a line."""
+    runner = _fake_tool_runner(
+        [
+            _tool_finding(5),
+            _tool_finding(25),
+            _tool_finding(None),
+        ]
+    )
+    agent = ReviewAgent(config, mock_llm, project_context, tool_runner=runner)
+    entry = DiffEntry(
+        filename="src/app.py",
+        status="modified",
+        additions=1,
+        deletions=1,
+        patch="@@ -4,2 +4,3 @@\n ctx\n+added\n-removed",
+    )
+
+    issues = agent._tool_issues_for(entry)
+
+    assert [issue.line_number for issue in issues] == [5]
+    assert issues[0].file_path == "src/app.py"
+    assert issues[0].source == "tool"
+
+
+def test_tool_findings_for_added_file_keep_any_line(config, mock_llm, project_context):
+    """Every line of an added file is changed, so no line filter applies."""
+    runner = _fake_tool_runner([_tool_finding(1), _tool_finding(99), _tool_finding(None)])
+    agent = ReviewAgent(config, mock_llm, project_context, tool_runner=runner)
+    entry = DiffEntry(
+        filename="src/app.py",
+        status="added",
+        additions=2,
+        deletions=0,
+        patch="@@ -0,0 +1,2 @@\n+one\n+two",
+    )
+
+    issues = agent._tool_issues_for(entry)
+
+    assert [issue.line_number for issue in issues] == [1, 99]
+
+
+def test_tool_findings_are_dropped_without_an_attributable_change(
+    config, mock_llm, project_context
+):
+    """Deleted, patchless and unparseable entries have no changed line to own."""
+    runner = _fake_tool_runner([_tool_finding(1)])
+    agent = ReviewAgent(config, mock_llm, project_context, tool_runner=runner)
+
+    deleted = DiffEntry(
+        filename="src/app.py",
+        status="deleted",
+        additions=0,
+        deletions=1,
+        patch="@@ -1 +0,0 @@\n-removed",
+    )
+    no_patch = DiffEntry(filename="src/app.py", status="modified", additions=1)
+    unparseable = DiffEntry(
+        filename="src/app.py", status="modified", additions=1, deletions=0, patch="not a diff"
+    )
+
+    assert agent._tool_issues_for(deleted) == []
+    assert agent._tool_issues_for(no_patch) == []
+    assert agent._tool_issues_for(unparseable) == []

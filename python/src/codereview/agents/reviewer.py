@@ -733,22 +733,39 @@ class ReviewAgent:
         """
         return self._exclude_matcher.matches(filename)
 
-    def _tool_issues_for(self, filename: str) -> list[FileIssue]:
+    def _tool_issues_for(self, entry: DiffEntry) -> list[FileIssue]:
         """Run external tools for one changed file and convert their output.
 
         The runner is invoked only when at least one tool is available for the
         path. Every failure (unavailable runner, spawn error, malformed output)
         is logged and swallowed so external tooling can never abort a review.
 
+        Only findings whose line is changed by the diff are returned: the
+        author owns the lines they touched, and GitHub cannot attach an inline
+        comment to a line outside the diff.  A deleted file, an entry without a
+        patch and a finding without a line number therefore contribute nothing.
+
         Args:
-            filename: Repository-relative path of the file being reviewed.
+            entry: Diff entry for the file being reviewed.
 
         Returns:
-            Tool findings converted to :class:`FileIssue` objects.
+            Changed-line tool findings converted to :class:`FileIssue` objects.
         """
         runner = self.tool_runner
         if runner is None:
             return []
+
+        filename = entry.filename
+        if entry.status == "deleted":
+            return []
+
+        changed_lines = set(self._changed_new_lines(entry.patch or ""))
+        if not changed_lines:
+            return []
+
+        # An added file consists only of changed lines, so a tool line number
+        # belongs to the change even when the hunk is partial.
+        keep_any_line = entry.status == "added"
 
         paths = [filename]
 
@@ -781,9 +798,16 @@ class ReviewAgent:
                 # noise a reviewer would never write.
                 continue
             try:
-                issues.append(self._tool_finding_to_issue(filename, finding))
+                issue = self._tool_finding_to_issue(filename, finding)
             except Exception as exc:
                 logger.warning("Could not convert tool finding for %s: %s", filename, exc)
+                continue
+            if issue.line_number is None:
+                # Without a line the finding cannot be attributed to a change.
+                continue
+            if not keep_any_line and issue.line_number not in changed_lines:
+                continue
+            issues.append(issue)
         return issues
 
     @staticmethod
@@ -843,7 +867,7 @@ class ReviewAgent:
 
         # External tools run after the rule engine; they are supplementary and
         # must never break the review when a binary is missing or malformed.
-        tool_issues = self._tool_issues_for(entry.filename)
+        tool_issues = self._tool_issues_for(entry)
 
         # Build static results summary for prompt
         static_results = ""
