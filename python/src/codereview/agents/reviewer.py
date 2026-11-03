@@ -21,7 +21,11 @@ from tqdm import tqdm
 from codereview.core.diff_filter import FilterConfig, filter_entries
 from codereview.core.diff_numbering import number_patch
 from codereview.core.finding_filter import FilterRules, filter_findings
-from codereview.core.llm_output import dump_unparseable, parse_json_object
+from codereview.core.llm_output import (
+    LLMOutputParseError,
+    dump_unparseable,
+    parse_json_object,
+)
 
 # Re-exported for tests that exercise the object-scanning helper directly.
 from codereview.core.llm_output import (
@@ -385,6 +389,48 @@ class ReviewAgent:
 
         return results
 
+    @staticmethod
+    def _status_code_of(exc: BaseException) -> int | None:
+        """Return the provider's HTTP status for an exception, if it has one."""
+        for candidate in (
+            getattr(exc, "status_code", None),
+            getattr(getattr(exc, "response", None), "status_code", None),
+        ):
+            try:
+                if candidate is not None:
+                    return int(candidate)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @classmethod
+    def _failure_kind(cls, exc: BaseException) -> str:
+        """Name the failure for logs and for the synthetic issue a failure emits."""
+        if isinstance(exc, LLMOutputParseError):
+            return "parse"
+        if isinstance(exc, asyncio.TimeoutError):
+            return "timeout"
+        status = cls._status_code_of(exc)
+        if status in (401, 403):
+            return "auth"
+        if status == 402:
+            return "quota"
+        if status in (400, 404, 422):
+            return "request"
+        if status is not None and status >= 500:
+            return "upstream"
+        return "error"
+
+    @classmethod
+    def _is_retryable(cls, exc: BaseException) -> bool:
+        """Return whether another attempt could plausibly succeed.
+
+        Auth and quota failures never heal in a backoff window: retrying them
+        costs three calls and three seconds per file for a guaranteed failure.
+        Unknown exceptions stay retryable so this cannot make behaviour worse.
+        """
+        return cls._failure_kind(exc) not in ("auth", "quota", "request")
+
     async def _review_file_with_retry(
         self, entry: DiffEntry, max_retries: int = 3
     ) -> Optional[FileReview]:
@@ -397,29 +443,44 @@ class ReviewAgent:
         Returns:
             File review result or None if all retries failed
         """
-        last_error = None
+        last_error: Optional[BaseException] = None
+        attempts = 0
+        kind = "error"
 
         for attempt in range(max_retries):
+            attempts = attempt + 1
+            # After a parse failure, ask again with an explicit "JSON only"
+            # instruction: resending the identical prompt tends to reproduce the
+            # identical mistake. Only the retry is changed, never the first call.
+            strict_json = isinstance(last_error, LLMOutputParseError)
             try:
-                result = await self._review_file(entry)
+                result = await self._review_file(entry, strict_json=strict_json)
                 if attempt > 0:
                     logger.info(f"Retry succeeded for {entry.filename} on attempt {attempt + 1}")
                 return result
             except Exception as e:
                 last_error = e
-                if attempt < max_retries - 1:
+                kind = self._failure_kind(e)
+                if not self._is_retryable(e):
+                    # Auth and quota failures are settled: another call would
+                    # burn the same error again.
+                    logger.error(
+                        f"Review failed for {entry.filename} ({kind}, not retried): {e}"
+                    )
+                    break
+                if attempts < max_retries:
                     wait_time = 2**attempt  # Exponential backoff: 1, 2, 4 seconds
                     logger.warning(
-                        f"Review failed for {entry.filename} (attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"Review failed for {entry.filename} (attempt {attempts}/{max_retries}): {e}. "
                         f"Retrying in {wait_time}s..."
                     )
                     await asyncio.sleep(wait_time)
                 else:
                     logger.error(
-                        f"Review failed for {entry.filename} after {max_retries} attempts: {e}"
+                        f"Review failed for {entry.filename} after {attempts} attempts ({kind}): {e}"
                     )
 
-        # All retries failed, return a degraded result
+        # Give up, return a degraded result that names what went wrong.
         return FileReview(
             file_path=entry.filename,
             risk_level=RiskLevel.MEDIUM,
@@ -428,7 +489,10 @@ class ReviewAgent:
                 FileIssue(
                     file_path=entry.filename,
                     risk_level=RiskLevel.MEDIUM,
-                    description=f"{REVIEW_FAILURE_PREFIX}{max_retries} attempts: {last_error}",
+                    description=(
+                        f"{REVIEW_FAILURE_PREFIX}{attempts} "
+                        f"attempt{'' if attempts == 1 else 's'} ({kind}): {last_error}"
+                    ),
                     suggestion="Consider reviewing this file manually or breaking it into smaller changes",
                 )
             ],
@@ -761,7 +825,7 @@ class ReviewAgent:
             evidence=[Evidence(kind=EvidenceKind.RULE, detail=f"{tool}_{rule_id}")],
         )
 
-    async def _review_file(self, entry: DiffEntry) -> FileReview:
+    async def _review_file(self, entry: DiffEntry, strict_json: bool = False) -> FileReview:
         """Review a single file with timeout handling.
 
         Args:
@@ -789,7 +853,7 @@ class ReviewAgent:
                 static_results += f"- [{issue['severity'].upper()}] {issue['description']} (Line {issue['line_number']})\n"
 
         cross_file_context = self._cross_file_context_for(entry)
-        prompt = self._build_prompt(entry)
+        prompt = self._build_prompt(entry, strict_json=strict_json)
         chain = prompt | self.llm
 
         try:
@@ -817,7 +881,7 @@ class ReviewAgent:
 
             if result is None:
                 dump_unparseable(raw_result, entry.filename.replace("/", "_"))
-                raise ValueError("Failed to parse LLM output as JSON")
+                raise LLMOutputParseError("Failed to parse LLM output as JSON")
 
             # Normalize risk_level values
             raw_risk = result.get("risk_level", "low")
@@ -901,7 +965,7 @@ class ReviewAgent:
         """
         return parse_json_object(raw)
 
-    def _build_prompt(self, entry: DiffEntry) -> ChatPromptTemplate:
+    def _build_prompt(self, entry: DiffEntry, strict_json: bool = False) -> ChatPromptTemplate:
         """Build prompt for file review.
 
         If config.custom_prompt_path is set and valid, loads template from file.
@@ -940,8 +1004,14 @@ class ReviewAgent:
                     )
 
         numbered_patch = number_patch(entry.patch) if entry.patch else "No diff available"
+        user_message = "Review this code change."
+        if strict_json:
+            user_message += (
+                "\n\nYour previous answer was not valid JSON. Reply with a single JSON object "
+                "and nothing else - no prose, no markdown fences."
+            )
         return ChatPromptTemplate.from_messages(
-            [("system", prompt_template), ("user", """Review this code change.""")]
+            [("system", prompt_template), ("user", user_message)]
         ).partial(cross_file_context="", patch=numbered_patch)
 
     def _is_critical_path(self, filename: str) -> bool:

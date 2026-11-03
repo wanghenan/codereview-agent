@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A failed review no longer retries failures that cannot succeed. Auth (401/403), quota (402) and bad-request (400/404/422) errors stop after one attempt instead of burning three calls and three seconds of backoff per file; timeouts, 5xx and unknown errors still retry, and an unparseable answer retries with an explicit "single JSON object, no prose" instruction. The degraded result now names the class, e.g. `Review failed after 1 attempt (auth): ...`.
+
 ## [1.3.3] - 2026-11-03
 
 ### Fixed
