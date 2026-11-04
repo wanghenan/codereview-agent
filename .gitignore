@@ -52,3 +52,21 @@ htmlcov/
 # Node
 node_modules/
 dist/
+
+# Local scratch that is not part of the project
+# Review notes, research material and unrelated documents that live in the
+# maintainer's checkout. Anchored with a leading slash so a real `assets/`,
+# `reference/` or `lessons/` added to the project later is not silently ignored.
+.DS_Store
+/.omo/
+/GLOSSARY.md
+/MISSION.md
+/NOTES.md
+/RESOURCES.md
+/assets/
+/learning-records/
+/lessons/
+/reference/
+# Patent-review correspondence (ticket-numbered, not project documentation)
+/回复邮件-LP*
+/技术审核*稿-*.docx
