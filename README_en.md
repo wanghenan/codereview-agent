@@ -72,7 +72,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: wanghenan/codereview-agent@v1
         with:
           config: .codereview-agent.yaml

@@ -244,7 +244,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: wanghenan/codereview-agent@v1
         with:
           config: .codereview-agent.yaml
@@ -289,6 +289,24 @@ python -m codereview.cli --diff '{\"files\": [...]}'
 ```
 
 **[→ 查看 CLI 完整用法](./docs/USER_GUIDE.md#方式三本地-cli)**
+
+---
+
+### 方式四：给编码 Agent 当 Skill 用
+
+不装 Python 也能用。把仓库里的 [`skills/code-review/`](skills/code-review/SKILL.md)
+拷进 Claude Code / Cursor / Copilot 等 agent，它就会按同一套准入规则审 diff：
+每条结论必须锚定到改动行，超出 diff 的发现直接丢弃，没有发现就老实说没有。
+
+```bash
+mkdir -p .claude/skills
+cp -r path/to/crAgent/skills/code-review .claude/skills/
+```
+
+diff 太大、需要跨文件符号解析、要往 PR 贴行内评论或要跑在 CI 里时，skill 会主动
+转交 `codereview` CLI —— 确定性引擎比手写指令更可靠。
+
+**[→ 查看 skill 说明](./skills/README.md)**
 
 ---
 
