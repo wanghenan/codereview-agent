@@ -9,7 +9,18 @@ review contract without running the CLI.
 
 ## Install
 
-Claude Code, project-local:
+Claude Code — this repository is also a plugin marketplace
+(`.claude-plugin/marketplace.json`), so there is nothing to copy:
+
+```bash
+/plugin marketplace add wanghenan/codereview-agent
+/plugin install code-review@codereview-agent
+```
+
+That registers the skill as `code-review:code-review`. Verified with Claude Code
+2.1.266: one skill, ~61 tokens always-on, ~620 on invoke.
+
+Claude Code, by copying instead — project-local:
 
 ```bash
 mkdir -p .claude/skills

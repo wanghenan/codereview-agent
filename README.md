@@ -298,6 +298,15 @@ python -m codereview.cli --diff '{\"files\": [...]}'
 拷进 Claude Code / Cursor / Copilot 等 agent，它就会按同一套准入规则审 diff：
 每条结论必须锚定到改动行，超出 diff 的发现直接丢弃，没有发现就老实说没有。
 
+Claude Code 一条命令装（仓库本身就是 plugin marketplace）：
+
+```bash
+/plugin marketplace add wanghenan/codereview-agent
+/plugin install code-review@codereview-agent
+```
+
+其他 agent 直接拷贝目录：
+
 ```bash
 mkdir -p .claude/skills
 cp -r path/to/crAgent/skills/code-review .claude/skills/

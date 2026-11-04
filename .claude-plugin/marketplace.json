@@ -1,0 +1,27 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "codereview-agent",
+  "owner": {
+    "name": "wanghenan"
+  },
+  "metadata": {
+    "description": "Evidence-anchored code review for Claude Code, backed by the crAgent CLI.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "code-review",
+      "description": "Review a diff, branch, or pull request and report evidence-anchored findings ranked by blast radius. Every finding cites a line the diff changed; findings outside the diff are dropped rather than downgraded; 'no findings' is a valid answer. Escalates to the codereview CLI for large diffs, cross-file symbol resolution, inline PR comments, and CI gating.",
+      "author": {
+        "name": "wanghenan"
+      },
+      "category": "development",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/code-review"
+      ],
+      "homepage": "https://github.com/wanghenan/codereview-agent"
+    }
+  ]
+}
